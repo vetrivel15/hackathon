@@ -184,21 +184,11 @@ export default function Dashboard() {
       </main>
 
       {/* Footer */}
-      <footer className="mt-12 border-t border-slate-800 py-6 px-6 text-center text-slate-500 text-sm">
+      <footer className="mt-12 border-t border-slate-800 py-6 px-6 text-center text-slate-400 text-sm">
         <div className="max-w-7xl mx-auto space-y-2">
           <p className="font-semibold text-slate-400">
-            🚀 S4 Remote Robot Management Cloud System v1.0
+            Remote Robot Management Cloud System v1.0
           </p>
-          <p>
-            Production-ready platform for remote teleoperation, monitoring, and management of humanoid robots
-          </p>
-          <div className="flex flex-wrap justify-center gap-4 mt-4 text-xs">
-            <span>✓ Real-time WebSocket Control</span>
-            <span>✓ Health Monitoring & Predictive Maintenance</span>
-            <span>✓ Path Logging & Kinematics Analysis</span>
-            <span>✓ OTA Software Updates</span>
-            <span>✓ Mobile-Responsive Design</span>
-          </div>
         </div>
       </footer>
 
