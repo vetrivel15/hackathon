@@ -31,9 +31,9 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 class RobotState:
     """Manages the state of the humanoid robot"""
     def __init__(self):
-        # Position and heading
-        self.latitude = 37.7749
-        self.longitude = -122.4194
+        # Position and heading - BTM, Bangalore
+        self.latitude = 12.9352
+        self.longitude = 77.6245
         self.heading = 0.0
         
         # Telemetry
@@ -48,6 +48,7 @@ class RobotState:
         
         # Control state
         self.mode = "IDLE"  # IDLE, TELEOP, STOPPED
+        self.previous_mode = None  # Track previous mode for change detection
         self.emergency_stop = False
         self.posture = "Stand"
         self.linear_velocity = 0.0
@@ -74,7 +75,7 @@ def handle_connect():
     # Send initial state to client
     emit('connection', {
         'status': 'connected',
-        'robot_name': 'HUM-01',
+        'robot_name': 'zeeno',
         'timestamp': time.time()
     })
 
@@ -112,10 +113,6 @@ def handle_control_command(data):
         robot.angular_velocity = float(data.get('angular', 0))
         robot.mode = "TELEOP"
         
-        # Update robot position based on velocity
-        if robot.linear_velocity != 0 or robot.angular_velocity != 0:
-            update_robot_position()
-        
         print(f"🎮 Move - Linear: {robot.linear_velocity:.2f}, Angular: {robot.angular_velocity:.2f}")
     
     elif action in ['move_forward', 'move_backward', 'rotate_left', 'rotate_right']:
@@ -134,7 +131,6 @@ def handle_control_command(data):
             robot.angular_velocity = -0.5
         
         robot.mode = "TELEOP"
-        update_robot_position()
         print(f"🔘 Quick action: {action}")
     
     elif action == 'set_posture':
@@ -157,18 +153,18 @@ def handle_control_command(data):
 def update_robot_position():
     """Update robot position based on velocity"""
     # Simple kinematic model
-    dt = 0.1  # 100ms time step
-    speed_factor = 0.00001  # Scale factor for lat/lon movement
+    dt = 0.15  # Match the telemetry broadcast interval (150ms)
+    speed_factor = 0.0008  # Increased 10x for more visible movement (~6.7 meters per velocity unit)
     
     if robot.linear_velocity != 0:
         # Move in the direction of heading
         angle_rad = math.radians(robot.heading)
-        robot.latitude += robot.linear_velocity * math.cos(angle_rad) * speed_factor
-        robot.longitude += robot.linear_velocity * math.sin(angle_rad) * speed_factor
+        robot.latitude += robot.linear_velocity * math.cos(angle_rad) * speed_factor * dt
+        robot.longitude += robot.linear_velocity * math.sin(angle_rad) * speed_factor * dt
     
     if robot.angular_velocity != 0:
         # Rotate heading
-        robot.heading += robot.angular_velocity * 10
+        robot.heading += robot.angular_velocity * 15 * dt  # Scale rotation with dt
         robot.heading = robot.heading % 360
 
 def log_event(level, message):
@@ -186,41 +182,115 @@ def log_event(level, message):
 # ============================================================================
 
 def simulate_telemetry():
-    """Simulate telemetry changes"""
-    # Battery depletion
+    """Simulate realistic telemetry changes for a humanoid robot"""
+    
+    # ===== BATTERY SIMULATION (more realistic drain rates) =====
+    # Idle: 0.5% per hour = 0.0000833% per second ≈ 0.0000125% per 150ms
+    # Teleop walking: 5% per hour = 0.000833% per second ≈ 0.000125% per 150ms
+    # Teleop running: 12% per hour = 0.002% per second ≈ 0.0003% per 150ms
+    
     if robot.mode == "TELEOP":
-        robot.battery -= random.uniform(0.1, 0.3)
-    else:
-        robot.battery -= random.uniform(0.01, 0.05)
+        # Simulate more realistic battery drain
+        robot.battery -= random.uniform(0.005, 0.015)  # ~0.3-0.9% per minute
+    elif robot.mode == "STOPPED":
+        robot.battery -= random.uniform(0.001, 0.003)  # ~0.06-0.18% per minute
+    else:  # IDLE
+        robot.battery -= random.uniform(0.0005, 0.002)  # ~0.03-0.12% per minute
     
     robot.battery = max(0, min(100, robot.battery))
     
-    # Temperature fluctuation
-    robot.temperature += random.uniform(-0.5, 0.5)
-    robot.temperature = max(30, min(80, robot.temperature))
+    # ===== TEMPERATURE SIMULATION (realistic thermal dynamics) =====
+    # Base temperature drift towards equilibrium (37°C ambient)
+    ambient_temp = 37.0
+    thermal_equilibrium = 0.95  # Exponential cooling factor
+    robot.temperature = robot.temperature * thermal_equilibrium + ambient_temp * (1 - thermal_equilibrium)
     
-    # CPU and memory variations
-    robot.cpu_usage = max(10, min(90, robot.cpu_usage + random.uniform(-5, 5)))
-    robot.memory_usage = max(20, min(95, robot.memory_usage + random.uniform(-3, 3)))
+    # Add activity-based heat generation
+    if robot.mode == "TELEOP":
+        robot.temperature += random.uniform(0.05, 0.15)  # Active operation heats up
+    elif robot.mode == "IDLE":
+        robot.temperature += random.uniform(-0.05, 0.05)  # Minor fluctuations
     
-    # System status based on conditions
-    if robot.battery < 20:
-        robot.system_status = "WARNING"
-    elif robot.temperature > 70:
-        robot.system_status = "WARNING"
-    elif robot.battery < 10:
+    # Add small random noise
+    robot.temperature += random.uniform(-0.1, 0.1)
+    robot.temperature = max(25, min(90, robot.temperature))
+    
+    # ===== CPU USAGE SIMULATION (realistic load patterns) =====
+    # Base load: 15-20% (system overhead)
+    # Teleop adds 30-50% load
+    # Motion planning adds 20-30% load
+    
+    base_cpu = 18
+    activity_cpu = 0
+    
+    if robot.mode == "TELEOP":
+        activity_cpu = random.uniform(30, 55)  # Active control
+    elif robot.mode == "IDLE":
+        activity_cpu = random.uniform(5, 15)   # Minimal activity
+    else:  # STOPPED
+        activity_cpu = random.uniform(8, 12)
+    
+    target_cpu = base_cpu + activity_cpu
+    # Smooth transitions instead of sudden jumps
+    robot.cpu_usage = robot.cpu_usage * 0.7 + target_cpu * 0.3
+    robot.cpu_usage = max(5, min(95, robot.cpu_usage))
+    
+    # ===== MEMORY USAGE SIMULATION (more stable) =====
+    # Memory doesn't change as frequently as CPU
+    # Add very small random fluctuations
+    robot.memory_usage += random.uniform(-1, 1)
+    robot.memory_usage = max(25, min(90, robot.memory_usage))
+    
+    # ===== SIGNAL STRENGTH SIMULATION (realistic wireless) =====
+    # Signal strength varies more slowly and realistically
+    # Occasional drops/spikes but generally stable
+    
+    if random.random() < 0.15:  # 15% chance of fluctuation each update
+        robot.signal_strength += random.choice([-1, 1])
+    
+    # Occasional interference events (5% chance)
+    if random.random() < 0.05:
+        robot.signal_strength = max(0, robot.signal_strength - random.randint(1, 2))
+    
+    robot.signal_strength = max(0, min(5, robot.signal_strength))
+    
+    # ===== FPS SIMULATION (activity-dependent) =====
+    # Running at 30 FPS baseline, drops under heavy load
+    base_fps = 30
+    
+    if robot.mode == "TELEOP":
+        # During active control, FPS varies based on CPU load
+        fps_variance = (robot.cpu_usage / 100.0) * 10  # Higher CPU → more FPS drops
+        robot.fps_count = max(15, 30 - fps_variance + random.uniform(-2, 2))
+    else:
+        robot.fps_count = max(25, 30 + random.uniform(-1, 2))
+    
+    robot.fps_count = int(robot.fps_count)
+    
+    # ===== SYSTEM STATUS DETERMINATION =====
+    # More granular status logic
+    if robot.battery < 10 or robot.temperature > 85 or robot.cpu_usage > 90:
         robot.system_status = "ERROR"
+    elif robot.battery < 25 or robot.temperature > 75 or robot.cpu_usage > 75:
+        robot.system_status = "WARNING"
     else:
         robot.system_status = "OK"
     
-    # Random signal fluctuation
-    robot.signal_strength = max(0, min(5, robot.signal_strength + random.randint(-1, 1)))
-    
-    # FPS counter
-    robot.fps_count = 30 + random.randint(-2, 2)
+    # ===== JOINT ERRORS (rare events) =====
+    # Occasionally thermal stress or overload causes joint errors
+    if robot.temperature > 80 and random.random() < 0.1:
+        robot.joint_errors = min(5, robot.joint_errors + 1)
+    elif robot.joint_errors > 0 and random.random() < 0.3:
+        robot.joint_errors = max(0, robot.joint_errors - 1)  # Self-recovery
 
 def broadcast_telemetry():
     """Broadcast robot state to all connected clients"""
+    # ===== APPLY CONTINUOUS MOVEMENT =====
+    # Update position based on current velocity (continuous motion)
+    if robot.linear_velocity != 0 or robot.angular_velocity != 0:
+        update_robot_position()
+    
+    # ===== SIMULATE TELEMETRY CHANGES =====
     simulate_telemetry()
     
     # Send pose update
@@ -242,10 +312,12 @@ def broadcast_telemetry():
         'jointErrors': robot.joint_errors
     })
     
-    # Send mode update
-    socketio.emit('mode_update', {
-        'mode': robot.mode
-    })
+    # Send mode update only if mode has changed
+    if robot.mode != robot.previous_mode:
+        socketio.emit('mode_update', {
+            'mode': robot.mode
+        })
+        robot.previous_mode = robot.mode
 
 @socketio.on('telemetry_request')
 def handle_telemetry_request():
@@ -296,8 +368,8 @@ def get_robot_state():
 @app.route('/api/robot/reset', methods=['POST'])
 def reset_robot():
     """Reset robot to initial state"""
-    robot.latitude = 37.7749
-    robot.longitude = -122.4194
+    robot.latitude = 12.9352
+    robot.longitude = 77.6245
     robot.heading = 0.0
     robot.battery = 85.0
     robot.mode = "IDLE"

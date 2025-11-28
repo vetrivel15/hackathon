@@ -154,15 +154,19 @@ export default function TeleopPanel() {
     <section className="bg-slate-900 rounded-xl p-4 border border-slate-700 shadow-lg h-96 max-h-96 flex flex-col">
       <h2 className="font-semibold mb-4 text-cyan-300 flex items-center gap-2">
         <span>🎮 Teleoperation Controls</span>
-        {isEmergencyStop && (
-          <span className="text-xs bg-red-900 text-red-300 px-2 py-1 rounded animate-pulse">
-            E-STOP ACTIVE
-          </span>
-        )}
-        <span className={`text-xs px-2 py-1 rounded border ${getModeColor()}`}>
-          {mode === 'Run' ? '🏃' : '🚶'} {mode}
-        </span>
       </h2>
+
+      {/* Emergency Stop Button - Positioned at Top for Safety */}
+      <button
+        onClick={handleEmergencyStop}
+        className={`w-full font-bold py-3 rounded-lg text-white transition-all transform hover:scale-105 active:scale-95 shadow-lg mb-4 ${
+          isEmergencyStop
+            ? 'bg-gradient-to-b from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 animate-pulse shadow-red-500/50'
+            : 'bg-gradient-to-b from-red-700 to-red-800 hover:from-red-600 hover:to-red-700 shadow-red-700/50'
+        }`}
+      >
+        {isEmergencyStop ? '🛑 EMERGENCY STOP - ACTIVE' : '🛑 EMERGENCY STOP'}
+      </button>
 
       {/* Joystick Container with Enhanced Styling */}
       <div
@@ -286,18 +290,6 @@ export default function TeleopPanel() {
           <option value="Wave">Wave</option>
         </select>
       </div>
-
-      {/* Emergency Stop Button */}
-      <button
-        onClick={handleEmergencyStop}
-        className={`w-full font-bold py-3 rounded-lg text-white transition-all transform hover:scale-105 active:scale-95 shadow-lg ${
-          isEmergencyStop
-            ? 'bg-gradient-to-b from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 animate-pulse shadow-red-500/50'
-            : 'bg-gradient-to-b from-red-700 to-red-800 hover:from-red-600 hover:to-red-700 shadow-red-700/50'
-        }`}
-      >
-        {isEmergencyStop ? '🛑 EMERGENCY STOP - ACTIVE' : '🛑 EMERGENCY STOP'}
-      </button>
 
       {/* Status Info */}
       <div className="mt-3 text-xs text-slate-400 border-t border-slate-700 pt-2">
