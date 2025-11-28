@@ -35,12 +35,23 @@ export default function OTAUpdatePanel() {
     fetch('http://localhost:5001/api/updates')
       .then(res => res.json())
       .then(data => {
-        setUpdateState(data);
-        if (data.available_updates.length > 0) {
+        // Map backend response to component state
+        setUpdateState({
+          currentVersion: data.current_version || '1.0.0',
+          latestVersion: data.latest_version || '1.2.0',
+          inProgress: data.update_in_progress || false,
+          progress: data.progress || 0,
+          availableUpdates: data.available_updates || [],
+          history: data.history || []
+        });
+        if (data.available_updates && data.available_updates.length > 0) {
           setSelectedVersion(data.available_updates[0].version);
         }
       })
-      .catch(err => console.error('Failed to fetch updates:', err));
+      .catch(err => {
+        console.error('Failed to fetch updates:', err);
+        // Keep default state on error
+      });
 
     // Poll for update progress
     const progressInterval = setInterval(() => {
