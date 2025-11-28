@@ -1,6 +1,13 @@
 """
-Humanoid Robot Backend Server
-WebSocket-based real-time teleoperation and telemetry service
+S4 Remote Robot Management Cloud System - Backend
+Advanced cloud platform for remote humanoid robot teleoperation, monitoring, and management.
+
+Modules:
+- RobotControlService: Real-time teleoperation and command execution
+- HealthMonitoringService: Telemetry, diagnostics, and predictive maintenance
+- PathLoggingService: Trajectory tracking and kinematics assessment
+- OTAUpdateService: Remote software update simulation and management
+- EventLoggingService: Comprehensive system event tracking
 """
 
 import os
@@ -8,84 +15,626 @@ import json
 import math
 import random
 import time
-from datetime import datetime
+import uuid
+import threading
+from datetime import datetime, timedelta
+from collections import deque
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from dotenv import load_dotenv
+from apscheduler.schedulers.background import BackgroundScheduler
 
 load_dotenv()
 
-# Initialize Flask app
+# ============================================================================
+# APPLICATION INITIALIZATION
+# ============================================================================
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-change-in-production')
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 CORS(app)
 
-# Initialize SocketIO for WebSocket support
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+scheduler = BackgroundScheduler()
 
 # ============================================================================
-# ROBOT STATE MANAGEMENT
+# DATA MODELS & ENUMS
 # ============================================================================
 
-class RobotState:
-    """Manages the state of the humanoid robot"""
+class RobotMode:
+    """Robot operational modes"""
+    STANDBY = "STANDBY"
+    MANUAL = "MANUAL"
+    AUTO = "AUTO"
+    STOPPED = "STOPPED"
+
+class HealthStatus:
+    """Health status indicators"""
+    HEALTHY = "HEALTHY"
+    WARNING = "WARNING"
+    CRITICAL = "CRITICAL"
+
+class EventLevel:
+    """Event logging levels"""
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+
+# ============================================================================
+# SERVICE: ROBOT CONTROL SERVICE
+# Manages real-time teleoperation commands and robot state
+# ============================================================================
+
+class RobotControlService:
+    """
+    Handles robot teleoperation, command execution, and state management.
+    Implements kinematic model for realistic robot movement.
+    """
     def __init__(self):
-        # Position and heading - BTM, Bangalore
-        self.latitude = 12.9352
-        self.longitude = 77.6245
-        self.heading = 0.0
+        # Position state (Cartesian coordinates)
+        self.x = 0.0
+        self.y = 0.0
+        self.heading = 0.0  # degrees (0-360)
         
-        # Telemetry
-        self.battery = 85.0
-        self.temperature = 42.0
-        self.signal_strength = 5
-        self.system_status = "OK"
-        self.cpu_usage = 30
-        self.memory_usage = 45
-        self.fps_count = 30
-        self.joint_errors = 0
-        
-        # Control state
-        self.mode = "IDLE"  # IDLE, TELEOP, STOPPED
-        self.previous_mode = None  # Track previous mode for change detection
-        self.emergency_stop = False
-        self.posture = "Stand"
+        # Velocity state
         self.linear_velocity = 0.0
         self.angular_velocity = 0.0
+        self.speed_multiplier = 1.0
         
-        # Connected clients
-        self.connected_clients = set()
-        self.last_update = time.time()
+        # Robot configuration
+        self.mode = RobotMode.STANDBY
+        self.posture = "Stand"
+        self.emergency_stop = False
+        
+        # Control constraints
+        self.max_linear_velocity = 1.5  # m/s
+        self.max_angular_velocity = 2.0  # rad/s
+        
+    def update_position(self, dt=0.1):
+        """
+        Update robot position using kinematic model.
+        Uses Ackermann steering approximation.
+        """
+        if self.emergency_stop or self.mode == RobotMode.STOPPED:
+            self.linear_velocity = 0.0
+            self.angular_velocity = 0.0
+            return
+        
+        # Apply speed multiplier
+        linear = self.linear_velocity * self.speed_multiplier
+        angular = self.angular_velocity * self.speed_multiplier
+        
+        # Clamp velocities
+        linear = max(-self.max_linear_velocity, min(self.max_linear_velocity, linear))
+        angular = max(-self.max_angular_velocity, min(self.max_angular_velocity, angular))
+        
+        # Update heading
+        self.heading += math.degrees(angular * dt)
+        self.heading = self.heading % 360
+        
+        # Update position
+        if abs(linear) > 0.01:  # Only move if velocity significant
+            angle_rad = math.radians(self.heading)
+            self.x += linear * math.cos(angle_rad) * dt
+            self.y += linear * math.sin(angle_rad) * dt
+    
+    def execute_command(self, command_data):
+        """
+        Execute teleoperation command.
+        Commands: move, move_forward, move_backward, rotate_left, rotate_right,
+                  set_posture, emergency_stop, set_mode, set_speed
+        """
+        action = command_data.get('action')
+        
+        if action == 'move':
+            self.linear_velocity = float(command_data.get('linear', 0))
+            self.angular_velocity = float(command_data.get('angular', 0))
+            if self.mode == RobotMode.STANDBY:
+                self.mode = RobotMode.MANUAL
+        
+        elif action == 'move_forward':
+            self.linear_velocity = 0.5 * self.speed_multiplier
+            self.angular_velocity = 0.0
+            self.mode = RobotMode.MANUAL
+        
+        elif action == 'move_backward':
+            self.linear_velocity = -0.5 * self.speed_multiplier
+            self.angular_velocity = 0.0
+            self.mode = RobotMode.MANUAL
+        
+        elif action == 'rotate_left':
+            self.linear_velocity = 0.0
+            self.angular_velocity = 0.5
+            self.mode = RobotMode.MANUAL
+        
+        elif action == 'rotate_right':
+            self.linear_velocity = 0.0
+            self.angular_velocity = -0.5
+            self.mode = RobotMode.MANUAL
+        
+        elif action == 'set_posture':
+            self.posture = command_data.get('value', 'Stand')
+        
+        elif action == 'emergency_stop':
+            self.emergency_stop = command_data.get('value', False)
+            if self.emergency_stop:
+                self.mode = RobotMode.STOPPED
+                self.linear_velocity = 0.0
+                self.angular_velocity = 0.0
+        
+        elif action == 'set_mode':
+            new_mode = command_data.get('value', RobotMode.STANDBY)
+            if new_mode in [RobotMode.STANDBY, RobotMode.MANUAL, RobotMode.AUTO]:
+                self.mode = new_mode
+        
+        elif action == 'set_speed':
+            speed_pct = command_data.get('speed', 100)
+            self.speed_multiplier = max(0.1, min(1.0, speed_pct / 100.0))
+    
+    def get_state(self):
+        """Get current robot control state"""
+        return {
+            'position': {'x': self.x, 'y': self.y, 'heading': self.heading},
+            'velocity': {'linear': self.linear_velocity, 'angular': self.angular_velocity},
+            'mode': self.mode,
+            'posture': self.posture,
+            'emergency_stop': self.emergency_stop,
+            'speed_multiplier': self.speed_multiplier
+        }
 
-robot = RobotState()
+# ============================================================================
+# SERVICE: HEALTH MONITORING SERVICE
+# Real-time health metrics, diagnostics, and predictive maintenance
+# ============================================================================
+
+class HealthMonitoringService:
+    """
+    Monitors robot health parameters including battery, temperature, CPU usage.
+    Implements predictive maintenance warnings and health scoring.
+    """
+    def __init__(self):
+        # Battery telemetry
+        self.battery_level = 85.0  # percentage
+        self.battery_health = 95.0  # battery health score
+        self.voltage = 48.0  # volts
+        
+        # Thermal management
+        self.temperature = 42.0  # celsius
+        self.motor_temp = 45.0
+        self.critical_temp_threshold = 75.0
+        
+        # System resources
+        self.cpu_usage = 30.0  # percentage
+        self.memory_usage = 45.0  # percentage
+        self.disk_usage = 32.0  # percentage
+        
+        # Performance metrics
+        self.fps = 30
+        self.latency_ms = 45
+        self.signal_strength = 5  # 0-5 bars
+        
+        # Diagnostics
+        self.error_count = 0
+        self.warning_count = 0
+        self.joint_errors = 0
+        self.motor_faults = []
+        
+        # Maintenance tracking
+        self.cycle_count = 1250  # actuator cycles
+        self.uptime_hours = 142.5
+        self.maintenance_due_hours = 500
+        
+        # Health history (for trending)
+        self.health_history = deque(maxlen=1440)  # 24 hours at 1-minute intervals
+        
+    def update_telemetry(self, is_active=False):
+        """Simulate realistic telemetry changes"""
+        # Battery depletion model
+        if is_active:
+            self.battery_level -= random.uniform(0.15, 0.35)
+            self.battery_health -= random.uniform(0.01, 0.05)
+        else:
+            self.battery_level -= random.uniform(0.02, 0.08)
+            self.battery_health -= random.uniform(0.005, 0.015)
+        
+        self.battery_level = max(0, min(100, self.battery_level))
+        self.battery_health = max(0, min(100, self.battery_health))
+        self.voltage = self.battery_level * 0.48 / 100 + 6.0  # 6V-54V range
+        
+        # Temperature dynamics
+        if is_active:
+            self.temperature += random.uniform(-0.3, 1.2)
+            self.motor_temp += random.uniform(0.0, 2.0)
+        else:
+            self.temperature += random.uniform(-0.8, 0.2)
+            self.motor_temp += random.uniform(-1.0, 0.5)
+        
+        self.temperature = max(30, min(80, self.temperature))
+        self.motor_temp = max(30, min(85, self.motor_temp))
+        
+        # System resources
+        self.cpu_usage = max(10, min(90, self.cpu_usage + random.uniform(-8, 8)))
+        self.memory_usage = max(20, min(95, self.memory_usage + random.uniform(-4, 4)))
+        self.disk_usage = max(20, min(98, self.disk_usage + random.uniform(-1, 1)))
+        
+        # Performance
+        self.fps = max(25, min(60, self.fps + random.uniform(-2, 3)))
+        self.latency_ms = max(15, min(200, self.latency_ms + random.uniform(-15, 20)))
+        self.signal_strength = max(1, min(5, self.signal_strength + random.randint(-1, 1)))
+        
+        # Cycle counter
+        if is_active:
+            self.cycle_count += random.uniform(0.5, 2.0)
+        
+        self.uptime_hours += random.uniform(0.001, 0.003)
+        
+        # Record history
+        self.health_history.append({
+            'timestamp': datetime.now().isoformat(),
+            'battery': self.battery_level,
+            'temperature': self.temperature,
+            'cpu_usage': self.cpu_usage,
+            'health_score': self.calculate_health_score()
+        })
+    
+    def calculate_health_score(self):
+        """
+        Calculate overall health score (0-100).
+        Based on battery, temperature, and error states.
+        """
+        battery_score = self.battery_level * 0.4
+        temp_score = max(0, 100 - abs(self.temperature - 50) * 2) * 0.3
+        resource_score = (100 - (self.cpu_usage + self.memory_usage) / 2) * 0.3
+        
+        health_score = battery_score + temp_score + resource_score
+        return max(0, min(100, health_score))
+    
+    def get_health_status(self):
+        """Determine health status level"""
+        health_score = self.calculate_health_score()
+        
+        if health_score < 30 or self.temperature > self.critical_temp_threshold:
+            return HealthStatus.CRITICAL
+        elif health_score < 60 or self.battery_level < 20:
+            return HealthStatus.WARNING
+        else:
+            return HealthStatus.HEALTHY
+    
+    def check_predictive_maintenance(self):
+        """Check for predictive maintenance warnings"""
+        warnings = []
+        
+        # Battery maintenance
+        if self.battery_health < 80:
+            warnings.append({
+                'type': 'BATTERY_DEGRADATION',
+                'severity': 'HIGH' if self.battery_health < 60 else 'MEDIUM',
+                'message': f'Battery health at {self.battery_health:.1f}%. Consider replacement.',
+                'estimated_life': f'{self.battery_health * 5:.0f} cycles remaining'
+            })
+        
+        # Maintenance cycles
+        cycles_remaining = self.maintenance_due_hours * 3600 / 1000  # rough estimate
+        if self.cycle_count > cycles_remaining * 0.8:
+            warnings.append({
+                'type': 'SCHEDULED_MAINTENANCE',
+                'severity': 'MEDIUM',
+                'message': f'Scheduled maintenance due in {int(cycles_remaining - self.cycle_count)} cycles.',
+                'next_maintenance': f'{int(cycles_remaining - self.cycle_count)} cycles'
+            })
+        
+        # Motor issues
+        if self.motor_temp > 70:
+            warnings.append({
+                'type': 'THERMAL_WARNING',
+                'severity': 'HIGH',
+                'message': f'Motor temperature critical: {self.motor_temp:.1f}°C. Reduce load.',
+                'recommended_action': 'Lower speed or allow cooling'
+            })
+        
+        return warnings
+    
+    def get_state(self):
+        """Get current health monitoring state"""
+        return {
+            'battery': {
+                'level': round(self.battery_level, 1),
+                'health': round(self.battery_health, 1),
+                'voltage': round(self.voltage, 2)
+            },
+            'thermal': {
+                'cpu_temp': round(self.temperature, 1),
+                'motor_temp': round(self.motor_temp, 1),
+                'critical_threshold': self.critical_temp_threshold
+            },
+            'resources': {
+                'cpu_usage': round(self.cpu_usage, 1),
+                'memory_usage': round(self.memory_usage, 1),
+                'disk_usage': round(self.disk_usage, 1)
+            },
+            'performance': {
+                'fps': round(self.fps, 1),
+                'latency_ms': round(self.latency_ms, 1),
+                'signal_strength': self.signal_strength
+            },
+            'diagnostics': {
+                'error_count': self.error_count,
+                'warning_count': self.warning_count,
+                'joint_errors': self.joint_errors,
+                'motor_faults': self.motor_faults
+            },
+            'maintenance': {
+                'cycle_count': round(self.cycle_count, 0),
+                'uptime_hours': round(self.uptime_hours, 2),
+                'maintenance_due_hours': self.maintenance_due_hours
+            },
+            'health_score': round(self.calculate_health_score(), 1),
+            'health_status': self.get_health_status()
+        }
+
+# ============================================================================
+# SERVICE: PATH LOGGING SERVICE
+# Trajectory tracking, kinematics assessment, and path visualization
+# ============================================================================
+
+class PathLoggingService:
+    """
+    Tracks robot trajectory for kinematics analysis.
+    Supports path playback and heatmap generation.
+    """
+    def __init__(self, max_path_points=5000):
+        self.path_points = deque(maxlen=max_path_points)
+        self.session_id = str(uuid.uuid4())[:8]
+        self.session_start = datetime.now()
+        self.total_distance = 0.0
+        self.last_position = (0.0, 0.0)
+        
+    def record_position(self, x, y, heading, timestamp=None):
+        """Record robot position for path logging"""
+        if timestamp is None:
+            timestamp = datetime.now()
+        
+        # Calculate distance traveled
+        if self.last_position:
+            dx = x - self.last_position[0]
+            dy = y - self.last_position[1]
+            distance = math.sqrt(dx**2 + dy**2)
+            self.total_distance += distance
+        
+        self.path_points.append({
+            'x': x,
+            'y': y,
+            'heading': heading,
+            'timestamp': timestamp.isoformat(),
+            'total_distance': self.total_distance
+        })
+        
+        self.last_position = (x, y)
+    
+    def get_path(self, limit=None):
+        """Get path history, optionally limited to recent points"""
+        path = list(self.path_points)
+        if limit and len(path) > limit:
+            path = path[-limit:]
+        return path
+    
+    def calculate_statistics(self):
+        """Calculate path statistics for kinematics assessment"""
+        if len(self.path_points) < 2:
+            return {}
+        
+        points = list(self.path_points)
+        
+        # Bounding box
+        xs = [p['x'] for p in points]
+        ys = [p['y'] for p in points]
+        
+        # Calculate velocities
+        velocities = []
+        for i in range(1, len(points)):
+            t1 = datetime.fromisoformat(points[i-1]['timestamp'])
+            t2 = datetime.fromisoformat(points[i]['timestamp'])
+            dt = (t2 - t1).total_seconds()
+            
+            if dt > 0:
+                dx = points[i]['x'] - points[i-1]['x']
+                dy = points[i]['y'] - points[i-1]['y']
+                velocity = math.sqrt(dx**2 + dy**2) / dt
+                velocities.append(velocity)
+        
+        return {
+            'total_distance': round(self.total_distance, 3),
+            'duration_seconds': (datetime.now() - self.session_start).total_seconds(),
+            'point_count': len(points),
+            'bounding_box': {
+                'min_x': min(xs),
+                'max_x': max(xs),
+                'min_y': min(ys),
+                'max_y': max(ys)
+            },
+            'average_velocity': round(sum(velocities) / len(velocities), 3) if velocities else 0,
+            'max_velocity': round(max(velocities), 3) if velocities else 0
+        }
+    
+    def clear_path(self):
+        """Clear path history and start new session"""
+        self.path_points.clear()
+        self.session_id = str(uuid.uuid4())[:8]
+        self.session_start = datetime.now()
+        self.total_distance = 0.0
+        self.last_position = (0.0, 0.0)
+
+# ============================================================================
+# SERVICE: OTA UPDATE SERVICE
+# Remote software update simulation and management
+# ============================================================================
+
+class OTAUpdateService:
+    """
+    Simulates remote over-the-air (OTA) software updates.
+    Tracks update history and progress.
+    """
+    def __init__(self):
+        self.current_version = "1.0.0"
+        self.latest_version = "1.2.0"
+        self.update_in_progress = False
+        self.update_progress = 0  # 0-100%
+        self.update_history = []
+        self.available_updates = [
+            {'version': '1.1.0', 'size_mb': 245, 'release_date': '2025-11-15', 'changes': 'Bug fixes and stability improvements'},
+            {'version': '1.2.0', 'size_mb': 512, 'release_date': '2025-11-28', 'changes': 'New AI features, improved pathfinding'}
+        ]
+    
+    def start_update(self, target_version):
+        """Initiate software update"""
+        if self.update_in_progress:
+            return {'success': False, 'error': 'Update already in progress'}
+        
+        if target_version not in [u['version'] for u in self.available_updates]:
+            return {'success': False, 'error': f'Version {target_version} not found'}
+        
+        self.update_in_progress = True
+        self.update_progress = 0
+        return {'success': True, 'version': target_version}
+    
+    def get_update_progress(self):
+        """Simulate update progress"""
+        if self.update_in_progress:
+            self.update_progress += random.uniform(2, 8)
+            
+            if self.update_progress >= 100:
+                self.update_progress = 100
+                self.finalize_update()
+            
+            return self.update_progress
+        return self.update_progress
+    
+    def finalize_update(self):
+        """Complete update process"""
+        if self.update_in_progress:
+            self.update_in_progress = False
+            self.update_history.append({
+                'version': self.latest_version,
+                'timestamp': datetime.now().isoformat(),
+                'status': 'SUCCESS'
+            })
+            self.current_version = self.latest_version
+    
+    def get_state(self):
+        """Get OTA service state"""
+        return {
+            'current_version': self.current_version,
+            'latest_version': self.latest_version,
+            'update_in_progress': self.update_in_progress,
+            'progress': self.update_progress,
+            'available_updates': self.available_updates,
+            'history': self.update_history[-10:]  # Last 10 updates
+        }
+
+# ============================================================================
+# SERVICE: EVENT LOGGING SERVICE
+# Comprehensive system event tracking and retrieval
+# ============================================================================
+
+class EventLoggingService:
+    """
+    Comprehensive event logging system for audit trail and debugging.
+    """
+    def __init__(self, max_events=10000):
+        self.events = deque(maxlen=max_events)
+    
+    def log_event(self, level, category, message, data=None):
+        """Log a system event"""
+        event = {
+            'id': str(uuid.uuid4())[:8],
+            'timestamp': datetime.now().isoformat(),
+            'level': level,
+            'category': category,
+            'message': message,
+            'data': data or {}
+        }
+        self.events.append(event)
+        return event
+    
+    def get_events(self, limit=100, level=None, category=None):
+        """Retrieve events with optional filtering"""
+        events = list(self.events)
+        
+        if level:
+            events = [e for e in events if e['level'] == level]
+        if category:
+            events = [e for e in events if e['category'] == category]
+        
+        return events[-limit:]
+    
+    def clear_events(self):
+        """Clear event history"""
+        self.events.clear()
+
+# ============================================================================
+# GLOBAL SERVICE INSTANCES
+# ============================================================================
+
+control_service = RobotControlService()
+health_service = HealthMonitoringService()
+path_service = PathLoggingService()
+ota_service = OTAUpdateService()
+event_logger = EventLoggingService()
+
+# Robot metadata for multi-robot support
+robot_fleet = {
+    'HUM-01': {
+        'name': 'Humanoid Unit 1',
+        'model': 'H1-X',
+        'status': 'ACTIVE',
+        'location': 'Lab A',
+        'services': {
+            'control': control_service,
+            'health': health_service,
+            'path': path_service,
+            'ota': ota_service
+        }
+    }
+}
+
+current_robot_id = 'HUM-01'
 
 # ============================================================================
 # WEBSOCKET EVENT HANDLERS
 # ============================================================================
 
+connected_clients = {}
+
 @socketio.on('connect')
 def handle_connect():
     """Handle client connection"""
     client_id = request.sid
-    robot.connected_clients.add(client_id)
-    print(f"✅ Client connected: {client_id}")
-    print(f"📊 Connected clients: {len(robot.connected_clients)}")
+    connected_clients[client_id] = {
+        'connected_at': datetime.now(),
+        'robot_id': current_robot_id
+    }
     
-    # Send initial state to client
+    event_logger.log_event(EventLevel.INFO, 'CONNECTION', f'Client connected', {'client_id': client_id})
+    
     emit('connection', {
         'status': 'connected',
-        'robot_name': 'zeeno',
-        'timestamp': time.time()
+        'client_id': client_id,
+        'robot_id': current_robot_id,
+        'robot_name': robot_fleet[current_robot_id]['name'],
+        'timestamp': datetime.now().isoformat()
     })
 
 @socketio.on('disconnect')
 def handle_disconnect():
     """Handle client disconnection"""
     client_id = request.sid
-    robot.connected_clients.discard(client_id)
-    print(f"🔌 Client disconnected: {client_id}")
-    print(f"📊 Connected clients: {len(robot.connected_clients)}")
+    if client_id in connected_clients:
+        del connected_clients[client_id]
+    
+    event_logger.log_event(EventLevel.INFO, 'CONNECTION', f'Client disconnected', {'client_id': client_id})
 
 @socketio.on('message')
 def handle_message(data):
@@ -94,334 +643,227 @@ def handle_message(data):
         msg_type = data.get('type')
         
         if msg_type == 'control':
-            handle_control_command(data)
+            control_service.execute_command(data)
+            event_logger.log_event(EventLevel.INFO, 'CONTROL', f"Control command: {data.get('action')}", data)
+        
         elif msg_type == 'ping':
-            emit('pong', {'timestamp': time.time()})
+            emit('pong', {'timestamp': datetime.now().isoformat()})
+        
         else:
             print(f"⚠️ Unknown message type: {msg_type}")
+    
     except Exception as e:
         print(f"❌ Error handling message: {e}")
+        event_logger.log_event(EventLevel.ERROR, 'MESSAGE_HANDLER', str(e))
         emit('error', {'message': str(e)})
-
-def handle_control_command(data):
-    """Process control commands from the frontend"""
-    action = data.get('action')
-    
-    if action == 'move':
-        # Joystick movement
-        robot.linear_velocity = float(data.get('linear', 0))
-        robot.angular_velocity = float(data.get('angular', 0))
-        robot.mode = "TELEOP"
-        
-        print(f"🎮 Move - Linear: {robot.linear_velocity:.2f}, Angular: {robot.angular_velocity:.2f}")
-    
-    elif action in ['move_forward', 'move_backward', 'rotate_left', 'rotate_right']:
-        # Quick action buttons
-        if action == 'move_forward':
-            robot.linear_velocity = 0.5
-            robot.angular_velocity = 0.0
-        elif action == 'move_backward':
-            robot.linear_velocity = -0.5
-            robot.angular_velocity = 0.0
-        elif action == 'rotate_left':
-            robot.linear_velocity = 0.0
-            robot.angular_velocity = 0.5
-        elif action == 'rotate_right':
-            robot.linear_velocity = 0.0
-            robot.angular_velocity = -0.5
-        
-        robot.mode = "TELEOP"
-        print(f"🔘 Quick action: {action}")
-    
-    elif action == 'set_posture':
-        robot.posture = data.get('value', 'Stand')
-        log_event('INFO', f"Posture changed to {robot.posture}")
-        print(f"🧍 Posture: {robot.posture}")
-    
-    elif action == 'emergency_stop':
-        robot.emergency_stop = data.get('value', False)
-        robot.mode = "STOPPED" if robot.emergency_stop else "IDLE"
-        robot.linear_velocity = 0.0
-        robot.angular_velocity = 0.0
-        status = "activated" if robot.emergency_stop else "deactivated"
-        log_event('WARN' if robot.emergency_stop else 'INFO', f"Emergency stop {status}")
-        print(f"🛑 Emergency stop: {robot.emergency_stop}")
-    
-    else:
-        print(f"⚠️ Unknown control action: {action}")
-
-def update_robot_position():
-    """Update robot position based on velocity"""
-    # Simple kinematic model
-    dt = 0.15  # Match the telemetry broadcast interval (150ms)
-    speed_factor = 0.0008  # Increased 10x for more visible movement (~6.7 meters per velocity unit)
-    
-    if robot.linear_velocity != 0:
-        # Move in the direction of heading
-        angle_rad = math.radians(robot.heading)
-        robot.latitude += robot.linear_velocity * math.cos(angle_rad) * speed_factor * dt
-        robot.longitude += robot.linear_velocity * math.sin(angle_rad) * speed_factor * dt
-    
-    if robot.angular_velocity != 0:
-        # Rotate heading
-        robot.heading += robot.angular_velocity * 15 * dt  # Scale rotation with dt
-        robot.heading = robot.heading % 360
-
-def log_event(level, message):
-    """Log an event and broadcast to clients"""
-    timestamp = datetime.now().strftime('%H:%M:%S')
-    print(f"📋 [{timestamp}] {level}: {message}")
-    socketio.emit('log_event', {
-        'level': level,
-        'message': message,
-        'timestamp': timestamp
-    })
-
-# ============================================================================
-# TELEMETRY BROADCAST
-# ============================================================================
-
-def simulate_telemetry():
-    """Simulate realistic telemetry changes for a humanoid robot"""
-    
-    # ===== BATTERY SIMULATION (more realistic drain rates) =====
-    # Idle: 0.5% per hour = 0.0000833% per second ≈ 0.0000125% per 150ms
-    # Teleop walking: 5% per hour = 0.000833% per second ≈ 0.000125% per 150ms
-    # Teleop running: 12% per hour = 0.002% per second ≈ 0.0003% per 150ms
-    
-    if robot.mode == "TELEOP":
-        # Simulate more realistic battery drain
-        robot.battery -= random.uniform(0.005, 0.015)  # ~0.3-0.9% per minute
-    elif robot.mode == "STOPPED":
-        robot.battery -= random.uniform(0.001, 0.003)  # ~0.06-0.18% per minute
-    else:  # IDLE
-        robot.battery -= random.uniform(0.0005, 0.002)  # ~0.03-0.12% per minute
-    
-    robot.battery = max(0, min(100, robot.battery))
-    
-    # ===== TEMPERATURE SIMULATION (realistic thermal dynamics) =====
-    # Base temperature drift towards equilibrium (37°C ambient)
-    ambient_temp = 37.0
-    thermal_equilibrium = 0.95  # Exponential cooling factor
-    robot.temperature = robot.temperature * thermal_equilibrium + ambient_temp * (1 - thermal_equilibrium)
-    
-    # Add activity-based heat generation
-    if robot.mode == "TELEOP":
-        robot.temperature += random.uniform(0.05, 0.15)  # Active operation heats up
-    elif robot.mode == "IDLE":
-        robot.temperature += random.uniform(-0.05, 0.05)  # Minor fluctuations
-    
-    # Add small random noise
-    robot.temperature += random.uniform(-0.1, 0.1)
-    robot.temperature = max(25, min(90, robot.temperature))
-    
-    # ===== CPU USAGE SIMULATION (realistic load patterns) =====
-    # Base load: 15-20% (system overhead)
-    # Teleop adds 30-50% load
-    # Motion planning adds 20-30% load
-    
-    base_cpu = 18
-    activity_cpu = 0
-    
-    if robot.mode == "TELEOP":
-        activity_cpu = random.uniform(30, 55)  # Active control
-    elif robot.mode == "IDLE":
-        activity_cpu = random.uniform(5, 15)   # Minimal activity
-    else:  # STOPPED
-        activity_cpu = random.uniform(8, 12)
-    
-    target_cpu = base_cpu + activity_cpu
-    # Smooth transitions instead of sudden jumps
-    robot.cpu_usage = robot.cpu_usage * 0.7 + target_cpu * 0.3
-    robot.cpu_usage = max(5, min(95, robot.cpu_usage))
-    
-    # ===== MEMORY USAGE SIMULATION (more stable) =====
-    # Memory doesn't change as frequently as CPU
-    # Add very small random fluctuations
-    robot.memory_usage += random.uniform(-1, 1)
-    robot.memory_usage = max(25, min(90, robot.memory_usage))
-    
-    # ===== SIGNAL STRENGTH SIMULATION (realistic wireless) =====
-    # Signal strength varies more slowly and realistically
-    # Occasional drops/spikes but generally stable
-    
-    if random.random() < 0.15:  # 15% chance of fluctuation each update
-        robot.signal_strength += random.choice([-1, 1])
-    
-    # Occasional interference events (5% chance)
-    if random.random() < 0.05:
-        robot.signal_strength = max(0, robot.signal_strength - random.randint(1, 2))
-    
-    robot.signal_strength = max(0, min(5, robot.signal_strength))
-    
-    # ===== FPS SIMULATION (activity-dependent) =====
-    # Running at 30 FPS baseline, drops under heavy load
-    base_fps = 30
-    
-    if robot.mode == "TELEOP":
-        # During active control, FPS varies based on CPU load
-        fps_variance = (robot.cpu_usage / 100.0) * 10  # Higher CPU → more FPS drops
-        robot.fps_count = max(15, 30 - fps_variance + random.uniform(-2, 2))
-    else:
-        robot.fps_count = max(25, 30 + random.uniform(-1, 2))
-    
-    robot.fps_count = int(robot.fps_count)
-    
-    # ===== SYSTEM STATUS DETERMINATION =====
-    # More granular status logic
-    if robot.battery < 10 or robot.temperature > 85 or robot.cpu_usage > 90:
-        robot.system_status = "ERROR"
-    elif robot.battery < 25 or robot.temperature > 75 or robot.cpu_usage > 75:
-        robot.system_status = "WARNING"
-    else:
-        robot.system_status = "OK"
-    
-    # ===== JOINT ERRORS (rare events) =====
-    # Occasionally thermal stress or overload causes joint errors
-    if robot.temperature > 80 and random.random() < 0.1:
-        robot.joint_errors = min(5, robot.joint_errors + 1)
-    elif robot.joint_errors > 0 and random.random() < 0.3:
-        robot.joint_errors = max(0, robot.joint_errors - 1)  # Self-recovery
-
-def broadcast_telemetry():
-    """Broadcast robot state to all connected clients"""
-    # ===== APPLY CONTINUOUS MOVEMENT =====
-    # Update position based on current velocity (continuous motion)
-    if robot.linear_velocity != 0 or robot.angular_velocity != 0:
-        update_robot_position()
-    
-    # ===== SIMULATE TELEMETRY CHANGES =====
-    simulate_telemetry()
-    
-    # Send pose update
-    socketio.emit('pose_update', {
-        'lat': robot.latitude,
-        'lon': robot.longitude,
-        'heading': robot.heading
-    })
-    
-    # Send telemetry update
-    socketio.emit('telemetry_update', {
-        'battery': round(robot.battery, 1),
-        'temperature': round(robot.temperature, 1),
-        'signalStrength': robot.signal_strength,
-        'systemStatus': robot.system_status,
-        'cpuUsage': round(robot.cpu_usage, 1),
-        'memoryUsage': round(robot.memory_usage, 1),
-        'fpsCount': robot.fps_count,
-        'jointErrors': robot.joint_errors
-    })
-    
-    # Send mode update only if mode has changed
-    if robot.mode != robot.previous_mode:
-        socketio.emit('mode_update', {
-            'mode': robot.mode
-        })
-        robot.previous_mode = robot.mode
 
 @socketio.on('telemetry_request')
 def handle_telemetry_request():
     """Handle explicit telemetry requests"""
     broadcast_telemetry()
 
-# ============================================================================
-# REST API ENDPOINTS
-# ============================================================================
-
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy',
-        'timestamp': datetime.now().isoformat(),
-        'connected_clients': len(robot.connected_clients)
+@socketio.on('request_path')
+def handle_path_request():
+    """Send current path to client"""
+    emit('path_update', {
+        'path': path_service.get_path(limit=500),
+        'statistics': path_service.calculate_statistics()
     })
 
-@app.route('/api/robot/state', methods=['GET'])
-def get_robot_state():
-    """Get current robot state"""
-    return jsonify({
-        'position': {
-            'latitude': robot.latitude,
-            'longitude': robot.longitude,
-            'heading': robot.heading
-        },
-        'telemetry': {
-            'battery': robot.battery,
-            'temperature': robot.temperature,
-            'signal_strength': robot.signal_strength,
-            'system_status': robot.system_status,
-            'cpu_usage': robot.cpu_usage,
-            'memory_usage': robot.memory_usage,
-            'fps_count': robot.fps_count,
-            'joint_errors': robot.joint_errors
-        },
-        'control': {
-            'mode': robot.mode,
-            'emergency_stop': robot.emergency_stop,
-            'posture': robot.posture,
-            'linear_velocity': robot.linear_velocity,
-            'angular_velocity': robot.angular_velocity
-        }
-    })
-
-@app.route('/api/robot/reset', methods=['POST'])
-def reset_robot():
-    """Reset robot to initial state"""
-    robot.latitude = 12.9352
-    robot.longitude = 77.6245
-    robot.heading = 0.0
-    robot.battery = 85.0
-    robot.mode = "IDLE"
-    robot.emergency_stop = False
-    log_event('INFO', 'Robot reset to initial state')
-    return jsonify({'status': 'reset successful'})
-
-@app.route('/api/logs', methods=['GET'])
-def get_logs():
-    """Placeholder for log retrieval"""
-    return jsonify({'logs': []})
-
 # ============================================================================
-# BACKGROUND TASKS
+# TELEMETRY BROADCAST (Core Real-time Update Loop)
 # ============================================================================
+
+def broadcast_telemetry():
+    """Broadcast all telemetry to connected clients"""
+    is_active = control_service.mode == RobotMode.MANUAL
+    
+    # Update services
+    health_service.update_telemetry(is_active)
+    control_service.update_position(dt=0.15)
+    path_service.record_position(control_service.x, control_service.y, control_service.heading)
+    
+    # Broadcast control state
+    socketio.emit('control_state', control_service.get_state())
+    
+    # Broadcast health telemetry
+    socketio.emit('health_telemetry', health_service.get_state())
+    
+    # Broadcast path update (less frequent to reduce bandwidth)
+    if random.random() < 0.2:  # 20% chance each update
+        socketio.emit('path_segment', {
+            'x': control_service.x,
+            'y': control_service.y,
+            'heading': control_service.heading,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    # Check for maintenance warnings
+    maintenance_warnings = health_service.check_predictive_maintenance()
+    if maintenance_warnings:
+        socketio.emit('maintenance_alert', {
+            'warnings': maintenance_warnings,
+            'timestamp': datetime.now().isoformat()
+        })
 
 def background_telemetry_broadcast():
-    """Background task to continuously broadcast telemetry"""
+    """Background task for continuous telemetry broadcast"""
     with app.app_context():
         while True:
             try:
-                if robot.connected_clients:
+                if connected_clients:
                     broadcast_telemetry()
                 time.sleep(0.15)  # ~6.7 Hz update rate
             except Exception as e:
                 print(f"❌ Error in telemetry broadcast: {e}")
 
 # ============================================================================
-# APPLICATION STARTUP
+# REST API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/health', methods=['GET'])
+def api_health_check():
+    """Health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'connected_clients': len(connected_clients),
+        'robot_online': current_robot_id in robot_fleet
+    })
+
+@app.route('/api/robot/state', methods=['GET'])
+def api_robot_state():
+    """Get comprehensive robot state"""
+    return jsonify({
+        'robot_id': current_robot_id,
+        'robot_info': robot_fleet[current_robot_id],
+        'control': control_service.get_state(),
+        'health': health_service.get_state(),
+        'timestamp': datetime.now().isoformat()
+    })
+
+@app.route('/api/robot/path', methods=['GET'])
+def api_robot_path():
+    """Get robot path history"""
+    limit = request.args.get('limit', 500, type=int)
+    return jsonify({
+        'path': path_service.get_path(limit=limit),
+        'statistics': path_service.calculate_statistics()
+    })
+
+@app.route('/api/robot/health', methods=['GET'])
+def api_robot_health():
+    """Get detailed health information"""
+    return jsonify({
+        'health': health_service.get_state(),
+        'maintenance_warnings': health_service.check_predictive_maintenance(),
+        'timestamp': datetime.now().isoformat()
+    })
+
+@app.route('/api/robot/reset', methods=['POST'])
+def api_robot_reset():
+    """Reset robot to initial state"""
+    control_service.x = 0.0
+    control_service.y = 0.0
+    control_service.heading = 0.0
+    control_service.mode = RobotMode.STANDBY
+    control_service.emergency_stop = False
+    path_service.clear_path()
+    
+    event_logger.log_event(EventLevel.INFO, 'ROBOT_CONTROL', 'Robot reset to initial state')
+    
+    return jsonify({'status': 'success', 'message': 'Robot reset complete'})
+
+@app.route('/api/updates', methods=['GET'])
+def api_get_updates():
+    """Get OTA update status and available updates"""
+    return jsonify(ota_service.get_state())
+
+@app.route('/api/updates/start', methods=['POST'])
+def api_start_update():
+    """Start software update"""
+    data = request.get_json()
+    target_version = data.get('version')
+    result = ota_service.start_update(target_version)
+    
+    if result['success']:
+        event_logger.log_event(EventLevel.INFO, 'OTA_UPDATE', f'Update started: v{target_version}')
+    
+    return jsonify(result)
+
+@app.route('/api/updates/progress', methods=['GET'])
+def api_update_progress():
+    """Get current update progress"""
+    return jsonify({
+        'progress': ota_service.get_update_progress(),
+        'in_progress': ota_service.update_in_progress,
+        'current_version': ota_service.current_version
+    })
+
+@app.route('/api/events', methods=['GET'])
+def api_get_events():
+    """Get system events"""
+    limit = request.args.get('limit', 100, type=int)
+    level = request.args.get('level')
+    category = request.args.get('category')
+    
+    return jsonify({
+        'events': event_logger.get_events(limit=limit, level=level, category=category)
+    })
+
+@app.route('/api/events/clear', methods=['POST'])
+def api_clear_events():
+    """Clear event history"""
+    event_logger.clear_events()
+    return jsonify({'status': 'success', 'message': 'Events cleared'})
+
+@app.route('/api/robot/list', methods=['GET'])
+def api_list_robots():
+    """List available robots in fleet"""
+    robots = []
+    for robot_id, info in robot_fleet.items():
+        robots.append({
+            'id': robot_id,
+            'name': info['name'],
+            'model': info['model'],
+            'status': info['status'],
+            'location': info['location']
+        })
+    return jsonify({'robots': robots})
+
+# ============================================================================
+# APPLICATION INITIALIZATION & STARTUP
 # ============================================================================
 
 @app.before_request
 def before_request():
-    """Executed before each request"""
+    """Pre-request processing"""
     pass
 
 @app.after_request
 def after_request(response):
-    """Executed after each request"""
+    """Post-request processing"""
     response.headers['Access-Control-Allow-Origin'] = '*'
     return response
 
 if __name__ == '__main__':
     import threading
     
-    print("\n" + "="*60)
-    print("🤖 Humanoid Robot Backend Server")
-    print("="*60)
-    print(f"🚀 Starting server on http://0.0.0.0:5001")
-    print(f"📡 WebSocket endpoint: ws://localhost:5001/socket.io")
-    print(f"📊 API endpoints available at http://localhost:5001/api/*")
-    print("="*60 + "\n")
+    print("\n" + "="*70)
+    print("🚀 S4 REMOTE ROBOT MANAGEMENT CLOUD SYSTEM - BACKEND")
+    print("="*70)
+    print(f"📡 Flask API Server: http://0.0.0.0:5001")
+    print(f"🔌 WebSocket Endpoint: ws://localhost:5001/socket.io")
+    print(f"📊 API Documentation: http://localhost:5001/api/*")
+    print(f"🤖 Active Robot: {current_robot_id} ({robot_fleet[current_robot_id]['name']})")
+    print("="*70)
+    print("Loaded Services:")
+    print("  ✓ Robot Control Service - Teleoperation & Command Execution")
+    print("  ✓ Health Monitoring Service - Real-time Diagnostics & Predictive Maintenance")
+    print("  ✓ Path Logging Service - Trajectory Tracking & Kinematics")
+    print("  ✓ OTA Update Service - Remote Software Updates")
+    print("  ✓ Event Logging Service - Comprehensive Audit Trail")
+    print("="*70 + "\n")
     
     # Start background telemetry broadcast thread
     telemetry_thread = threading.Thread(target=background_telemetry_broadcast, daemon=True)

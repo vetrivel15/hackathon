@@ -1,56 +1,230 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { ChevronDown, Settings, RotateCw } from 'lucide-react';
 import Header from '../components/Header';
-import MapPanel from '../components/MapPanel';
-import StatusPanel from '../components/StatusPanel';
+import OperationsDashboard from '../components/OperationsDashboard';
 import TeleopPanel from '../components/TeleopPanel';
+import HealthMonitoringPanel from '../components/HealthMonitoringPanel';
+import PathLoggingPanel from '../components/PathLoggingPanel';
+import OTAUpdatePanel from '../components/OTAUpdatePanel';
 import LogsPanel from '../components/LogsPanel';
 import websocketService from '../services/websocketService';
 
+/**
+ * S4 Remote Robot Management Cloud System - Main Dashboard
+ * 
+ * Integrated Control Room featuring:
+ * - Real-time Operations Dashboard with robot status, battery, mode, position
+ * - Tele-operated Driving with joystick and emergency controls
+ * - Health Monitoring with real-time graphs and predictive maintenance
+ * - Path Logging & Kinematics with trajectory visualization and playback
+ * - OTA Update Management for remote software updates
+ * - Event Logging & System Events
+ * - Mobile-responsive layout for remote operations
+ */
 export default function Dashboard() {
+  const [activeTab, setActiveTab] = useState('operations');
+  const [isConnected, setIsConnected] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+
   useEffect(() => {
     // Initialize WebSocket connection
     websocketService.connect().catch(error => {
       console.error('Failed to connect to WebSocket:', error);
     });
 
+    // Listen for connection status
+    const unsub = websocketService.on('connection', (data) => {
+      setIsConnected(data.status === 'connected');
+    });
+
     return () => {
-      // Cleanup not needed as service persists across renders
+      unsub();
     };
   }, []);
 
+  const tabs = [
+    { id: 'operations', label: '📊 Operations', icon: '🎯' },
+    { id: 'teleop', label: '🎮 Teleoperation', icon: '👾' },
+    { id: 'health', label: '❤️ Health Monitor', icon: '📈' },
+    { id: 'path', label: '🗺️ Path Logging', icon: '📍' },
+    { id: 'updates', label: '⬇️ Software Updates', icon: '🔄' },
+    { id: 'logs', label: '📋 System Logs', icon: '📝' }
+  ];
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100">
+      {/* Header */}
       <Header />
 
-      <main className="p-6 max-w-7xl mx-auto">
-        {/* 2x2 Responsive Grid Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 auto-rows-max lg:auto-rows-fr">
-          {/* Top Left: Live Map - takes full height on large screens */}
-          <div className="lg:row-span-2">
-            <MapPanel />
-          </div>
+      {/* Main Content Area */}
+      <main className="p-4 md:p-6 max-w-7xl mx-auto">
+        {/* Tab Navigation */}
+        <div className="mb-6 flex flex-wrap gap-2 overflow-x-auto pb-2 scrollbar-hide">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-2 rounded-lg font-semibold transition-all whitespace-nowrap transform hover:scale-105 active:scale-95 ${
+                activeTab === tab.id
+                  ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/50'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+              }`}
+            >
+              <span className="mr-2">{tab.icon}</span>
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-          {/* Top Right: Teleoperation Control */}
-          <div>
-            <TeleopPanel />
+        {/* Connection Status Alert */}
+        {!isConnected && (
+          <div className="mb-6 bg-red-900/20 border border-red-600/50 rounded-lg p-4 flex items-center gap-3 animate-pulse">
+            <div className="w-3 h-3 rounded-full bg-red-500"></div>
+            <span className="text-red-300 font-semibold">
+              ⚠️ Disconnected - Attempting to reconnect...
+            </span>
           </div>
+        )}
 
-          {/* Bottom Right: Robot Status */}
-          <div>
-            <StatusPanel />
-          </div>
+        {/* Tab Content */}
+        <div className="space-y-6">
+          {/* Operations Dashboard */}
+          {activeTab === 'operations' && (
+            <div className="animate-in fade-in">
+              <div className="mb-4">
+                <h2 className="text-2xl font-bold text-cyan-300 mb-2">Operations Dashboard</h2>
+                <p className="text-slate-400">Real-time robot status, metrics, and alerts</p>
+              </div>
+              <OperationsDashboard />
+            </div>
+          )}
 
-          {/* Bottom: Logs & Events - spans full width on mobile */}
-          <div className="lg:col-span-2">
-            <LogsPanel />
-          </div>
+          {/* Teleoperation Control */}
+          {activeTab === 'teleop' && (
+            <div className="animate-in fade-in">
+              <div className="mb-4">
+                <h2 className="text-2xl font-bold text-cyan-300 mb-2">Teleoperation Control</h2>
+                <p className="text-slate-400">Remote driving with real-time control and emergency stop</p>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2">
+                  <TeleopPanel />
+                </div>
+                <div className="space-y-4">
+                  <div className="bg-slate-900 rounded-lg border border-slate-700 p-4 shadow-lg">
+                    <h3 className="font-semibold mb-4 text-cyan-300">Control Guide</h3>
+                    <div className="space-y-3 text-sm">
+                      <div>
+                        <div className="font-semibold text-slate-300 mb-1">Joystick</div>
+                        <p className="text-slate-400">Drag to move and rotate robot</p>
+                      </div>
+                      <div>
+                        <div className="font-semibold text-slate-300 mb-1">Quick Buttons</div>
+                        <p className="text-slate-400">Forward, Backward, Left, Right movements</p>
+                      </div>
+                      <div>
+                        <div className="font-semibold text-slate-300 mb-1">Emergency Stop</div>
+                        <p className="text-slate-400">Instantly stops all robot movement</p>
+                      </div>
+                      <div>
+                        <div className="font-semibold text-slate-300 mb-1">Mode Selection</div>
+                        <p className="text-slate-400">Walk for normal operation, Run for high speed</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Health Monitoring */}
+          {activeTab === 'health' && (
+            <div className="animate-in fade-in">
+              <div className="mb-4">
+                <h2 className="text-2xl font-bold text-cyan-300 mb-2">Health Monitoring & Analytics</h2>
+                <p className="text-slate-400">Real-time system metrics with predictive maintenance alerts</p>
+              </div>
+              <HealthMonitoringPanel />
+            </div>
+          )}
+
+          {/* Path Logging */}
+          {activeTab === 'path' && (
+            <div className="animate-in fade-in">
+              <div className="mb-4">
+                <h2 className="text-2xl font-bold text-cyan-300 mb-2">Path Logging & Kinematics</h2>
+                <p className="text-slate-400">Trajectory tracking, visualization, and analysis</p>
+              </div>
+              <PathLoggingPanel />
+            </div>
+          )}
+
+          {/* Software Updates */}
+          {activeTab === 'updates' && (
+            <div className="animate-in fade-in">
+              <div className="mb-4">
+                <h2 className="text-2xl font-bold text-cyan-300 mb-2">Remote Software Updates (OTA)</h2>
+                <p className="text-slate-400">Manage robot firmware and software versions</p>
+              </div>
+              <OTAUpdatePanel />
+            </div>
+          )}
+
+          {/* System Logs */}
+          {activeTab === 'logs' && (
+            <div className="animate-in fade-in">
+              <div className="mb-4">
+                <h2 className="text-2xl font-bold text-cyan-300 mb-2">System Event Log</h2>
+                <p className="text-slate-400">Comprehensive audit trail of all system events</p>
+              </div>
+              <LogsPanel />
+            </div>
+          )}
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="mt-12 border-t border-slate-800 py-4 px-6 text-center text-slate-500 text-sm">
-        <p>🤖 Humanoid Robot Command Center v1.0 | Real-time Remote Control Dashboard</p>
+      <footer className="mt-12 border-t border-slate-800 py-6 px-6 text-center text-slate-500 text-sm">
+        <div className="max-w-7xl mx-auto space-y-2">
+          <p className="font-semibold text-slate-400">
+            🚀 S4 Remote Robot Management Cloud System v1.0
+          </p>
+          <p>
+            Production-ready platform for remote teleoperation, monitoring, and management of humanoid robots
+          </p>
+          <div className="flex flex-wrap justify-center gap-4 mt-4 text-xs">
+            <span>✓ Real-time WebSocket Control</span>
+            <span>✓ Health Monitoring & Predictive Maintenance</span>
+            <span>✓ Path Logging & Kinematics Analysis</span>
+            <span>✓ OTA Software Updates</span>
+            <span>✓ Mobile-Responsive Design</span>
+          </div>
+        </div>
       </footer>
+
+      {/* Global Styles for Scrollbar */}
+      <style jsx>{`
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
+        .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .animate-in {
+          animation: fadeIn 0.3s ease-in-out;
+        }
+      `}</style>
     </div>
   );
 }

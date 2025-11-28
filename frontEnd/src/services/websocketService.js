@@ -1,13 +1,31 @@
 import { io } from 'socket.io-client';
 
+/**
+ * WebSocket Service for S4 Remote Robot Management System
+ * Handles real-time communication with backend services:
+ * - Control commands transmission
+ * - Health telemetry reception
+ * - Path logging updates
+ * - Maintenance alerts
+ * - Event streaming
+ */
 class WebSocketService {
   constructor(url = 'http://localhost:5001') {
     this.url = url;
     this.socket = null;
     this.listeners = new Map();
     this.isConnecting = false;
+    this.reconnectAttempts = 0;
+    this.maxReconnectAttempts = 10;
+    this.reconnectDelay = 1000;
+    this.messageQueue = [];
+    this.isOnline = false;
   }
 
+  /**
+   * Establish WebSocket connection with automatic reconnection
+   * @returns {Promise<void>}
+   */
   connect() {
     if (this.socket && this.socket.connected) {
       return Promise.resolve();
@@ -18,15 +36,22 @@ class WebSocketService {
       try {
         this.socket = io(this.url, {
           reconnection: true,
-          reconnectionDelay: 1000,
+          reconnectionDelay: this.reconnectDelay,
           reconnectionDelayMax: 5000,
-          reconnectionAttempts: 10,
-          transports: ['websocket', 'polling']
+          reconnectionAttempts: this.maxReconnectAttempts,
+          transports: ['websocket', 'polling'],
+          autoConnect: true
         });
 
         this.socket.on('connect', () => {
           console.log('✅ WebSocket connected');
           this.isConnecting = false;
+          this.isOnline = true;
+          this.reconnectAttempts = 0;
+          
+          // Process queued messages
+          this.processMessageQueue();
+          
           this.emit('connection', { status: 'connected' });
           resolve();
         });
@@ -42,7 +67,7 @@ class WebSocketService {
           }
         });
 
-        // Listen for all Socket.IO events
+        // Listen for all Socket.IO events dynamically
         this.socket.onAny((event, data) => {
           this.emit(event, data);
         });
@@ -51,14 +76,21 @@ class WebSocketService {
           console.error('❌ WebSocket error:', error);
           this.emit('error', error);
           this.isConnecting = false;
-          reject(error);
         });
 
-        this.socket.on('disconnect', () => {
-          console.log('🔌 WebSocket disconnected');
+        this.socket.on('disconnect', (reason) => {
+          console.log('🔌 WebSocket disconnected:', reason);
+          this.isOnline = false;
           this.emit('connection', { status: 'disconnected' });
           this.isConnecting = false;
         });
+
+        this.socket.on('connect_error', (error) => {
+          console.error('Connection error:', error);
+          this.reconnectAttempts++;
+          this.isConnecting = false;
+        });
+
       } catch (error) {
         this.isConnecting = false;
         reject(error);
@@ -66,17 +98,44 @@ class WebSocketService {
     });
   }
 
+  /**
+   * Send message to server, with queuing if disconnected
+   * @param {string} type - Message type
+   * @param {object} data - Message payload
+   * @returns {boolean} - Success status
+   */
   send(type, data) {
+    const message = { type, timestamp: Date.now(), ...data };
+
     if (this.socket && this.socket.connected) {
-      const message = { type, timestamp: Date.now(), ...data };
       this.socket.emit('message', message);
       return true;
     } else {
-      console.warn('⚠️ WebSocket not connected. Cannot send:', type);
+      // Queue message for later delivery
+      this.messageQueue.push(message);
+      console.warn('⚠️ WebSocket not connected. Message queued:', type);
       return false;
     }
   }
 
+  /**
+   * Process queued messages when connection is restored
+   * @private
+   */
+  processMessageQueue() {
+    while (this.messageQueue.length > 0 && this.isOnline) {
+      const message = this.messageQueue.shift();
+      this.socket.emit('message', message);
+      console.log('📤 Processed queued message:', message.type);
+    }
+  }
+
+  /**
+   * Register event listener
+   * @param {string} event - Event name
+   * @param {function} callback - Handler function
+   * @returns {function} - Unsubscribe function
+   */
   on(event, callback) {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
@@ -93,6 +152,12 @@ class WebSocketService {
     };
   }
 
+  /**
+   * Emit event to all listeners
+   * @param {string} event - Event name
+   * @param {*} data - Event data
+   * @private
+   */
   emit(event, data) {
     if (this.listeners.has(event)) {
       this.listeners.get(event).forEach(callback => {
@@ -105,15 +170,45 @@ class WebSocketService {
     }
   }
 
+  /**
+   * Request path data from server
+   */
+  requestPath() {
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('request_path');
+    }
+  }
+
+  /**
+   * Disconnect WebSocket
+   */
   disconnect() {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
+      this.isOnline = false;
     }
   }
 
+  /**
+   * Check connection status
+   * @returns {boolean}
+   */
   isConnected() {
-    return this.socket && this.socket.connected;
+    return this.socket && this.socket.connected && this.isOnline;
+  }
+
+  /**
+   * Get connection metrics
+   * @returns {object}
+   */
+  getConnectionMetrics() {
+    return {
+      connected: this.isConnected(),
+      reconnectAttempts: this.reconnectAttempts,
+      queuedMessages: this.messageQueue.length,
+      socketId: this.socket?.id || null
+    };
   }
 }
 

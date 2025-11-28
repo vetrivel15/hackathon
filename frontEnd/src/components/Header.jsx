@@ -24,7 +24,7 @@ export default function Header() {
     <header className="flex flex-col md:flex-row justify-between items-start md:items-center px-6 py-4 border-b border-slate-700 bg-gradient-to-r from-slate-900 to-slate-800">
       <div>
         <h1 className="text-2xl font-bold text-cyan-400">🤖 Humanoid Command Center</h1>
-        <p className="text-sm text-slate-400">Robot ID: zeeno • 32-DOF Remote Control</p>
+        <p className="text-sm text-slate-400">Robot ID: HUM-01 • 32-DOF Remote Control</p>
       </div>
       
       <div className="flex flex-wrap gap-6 text-sm mt-4 md:mt-0">
