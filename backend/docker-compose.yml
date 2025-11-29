@@ -1,0 +1,29 @@
+services:
+  mqtt-broker:
+    image: eclipse-mosquitto:2.0
+    container_name: s4-mqtt-broker
+    restart: unless-stopped
+    ports:
+      - "1884:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-h", "localhost", "-t", "$$SYS/#", "-C", "1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: .
+    container_name: s4-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      mqtt-broker:
+        condition: service_healthy
