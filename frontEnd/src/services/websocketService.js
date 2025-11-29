@@ -10,7 +10,14 @@ import { io } from 'socket.io-client';
  * - Event streaming
  */
 class WebSocketService {
-  constructor(url = 'http://localhost:5001') {
+  constructor(url = null) {
+    // Use current host if no URL provided (works for network access)
+    if (!url) {
+      const protocol = window.location.protocol === 'https:' ? 'https' : 'http';
+      const host = window.location.hostname;
+      const port = 5001;
+      url = `${protocol}://${host}:${port}`;
+    }
     this.url = url;
     this.socket = null;
     this.listeners = new Map();
@@ -44,7 +51,7 @@ class WebSocketService {
         });
 
         this.socket.on('connect', () => {
-          console.log('✅ WebSocket connected');
+          console.log('✅ WebSocket connected to:', this.url);
           this.isConnecting = false;
           this.isOnline = true;
           this.reconnectAttempts = 0;

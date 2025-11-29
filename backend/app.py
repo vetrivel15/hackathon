@@ -93,6 +93,12 @@ class RobotControlService:
         self.max_linear_velocity = 1.5  # m/s
         self.max_angular_velocity = 2.0  # rad/s
         
+        # Navigation state
+        self.target_x = None
+        self.target_y = None
+        self.is_navigating = False
+        self.waypoint_tolerance = 0.2  # meters
+        
     def update_position(self, dt=0.1):
         """
         Update robot position using kinematic model.
@@ -121,38 +127,82 @@ class RobotControlService:
             self.x += linear * math.cos(angle_rad) * dt
             self.y += linear * math.sin(angle_rad) * dt
     
+    def navigate_to_waypoint(self, target_x, target_y):
+        """
+        Calculate velocity commands to navigate to target waypoint.
+        Uses simple proportional control for steering.
+        """
+        if self.emergency_stop:
+            self.linear_velocity = 0.0
+            self.angular_velocity = 0.0
+            return
+        
+        # Calculate distance to target
+        dx = target_x - self.x
+        dy = target_y - self.y
+        distance = math.sqrt(dx**2 + dy**2)
+        
+        # Check if waypoint reached
+        if distance < self.waypoint_tolerance:
+            self.linear_velocity = 0.0
+            self.angular_velocity = 0.0
+            self.is_navigating = False
+            return
+        
+        # Calculate target heading
+        target_heading = math.degrees(math.atan2(dy, dx))
+        
+        # Calculate heading error (shortest angle)
+        heading_error = target_heading - self.heading
+        while heading_error > 180:
+            heading_error -= 360
+        while heading_error < -180:
+            heading_error += 360
+        
+        # Proportional control
+        self.linear_velocity = min(0.8, distance * 0.3)  # Move towards target
+        self.angular_velocity = heading_error * 0.02  # Turn towards target heading
+        
+        self.mode = RobotMode.AUTO
+        self.is_navigating = True
+    
     def execute_command(self, command_data):
         """
         Execute teleoperation command.
         Commands: move, move_forward, move_backward, rotate_left, rotate_right,
-                  set_posture, emergency_stop, set_mode, set_speed
+                  set_posture, emergency_stop, set_mode, set_speed, navigate_to
         """
         action = command_data.get('action')
         
         if action == 'move':
             self.linear_velocity = float(command_data.get('linear', 0))
             self.angular_velocity = float(command_data.get('angular', 0))
+            self.is_navigating = False
             if self.mode == RobotMode.STANDBY:
                 self.mode = RobotMode.MANUAL
         
         elif action == 'move_forward':
             self.linear_velocity = 0.5 * self.speed_multiplier
             self.angular_velocity = 0.0
+            self.is_navigating = False
             self.mode = RobotMode.MANUAL
         
         elif action == 'move_backward':
             self.linear_velocity = -0.5 * self.speed_multiplier
             self.angular_velocity = 0.0
+            self.is_navigating = False
             self.mode = RobotMode.MANUAL
         
         elif action == 'rotate_left':
             self.linear_velocity = 0.0
             self.angular_velocity = 0.5
+            self.is_navigating = False
             self.mode = RobotMode.MANUAL
         
         elif action == 'rotate_right':
             self.linear_velocity = 0.0
             self.angular_velocity = -0.5
+            self.is_navigating = False
             self.mode = RobotMode.MANUAL
         
         elif action == 'set_posture':
@@ -164,6 +214,7 @@ class RobotControlService:
                 self.mode = RobotMode.STOPPED
                 self.linear_velocity = 0.0
                 self.angular_velocity = 0.0
+                self.is_navigating = False
         
         elif action == 'set_mode':
             new_mode = command_data.get('value', RobotMode.STANDBY)
@@ -173,6 +224,13 @@ class RobotControlService:
         elif action == 'set_speed':
             speed_pct = command_data.get('speed', 100)
             self.speed_multiplier = max(0.1, min(1.0, speed_pct / 100.0))
+        
+        elif action == 'navigate_to':
+            target_x = float(command_data.get('target_x', 0))
+            target_y = float(command_data.get('target_y', 0))
+            self.target_x = target_x
+            self.target_y = target_y
+            self.navigate_to_waypoint(target_x, target_y)
     
     def get_state(self):
         """Get current robot control state"""
@@ -182,7 +240,9 @@ class RobotControlService:
             'mode': self.mode,
             'posture': self.posture,
             'emergency_stop': self.emergency_stop,
-            'speed_multiplier': self.speed_multiplier
+            'speed_multiplier': self.speed_multiplier,
+            'is_navigating': self.is_navigating,
+            'target': {'x': self.target_x, 'y': self.target_y} if self.is_navigating else None
         }
 
 # ============================================================================
@@ -676,10 +736,15 @@ def handle_path_request():
 
 def broadcast_telemetry():
     """Broadcast all telemetry to connected clients"""
-    is_active = control_service.mode == RobotMode.MANUAL
+    is_active = control_service.mode == RobotMode.MANUAL or control_service.is_navigating
     
     # Update services
     health_service.update_telemetry(is_active)
+    
+    # Continue navigation if active
+    if control_service.is_navigating:
+        control_service.navigate_to_waypoint(control_service.target_x, control_service.target_y)
+    
     control_service.update_position(dt=0.15)
     path_service.record_position(control_service.x, control_service.y, control_service.heading)
     

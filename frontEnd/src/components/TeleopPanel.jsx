@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import nipplejs from 'nipplejs';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
+import { Trash2, Flag } from 'lucide-react';
 import websocketService from '../services/websocketService';
 
 // BTM Bangalore coordinates
@@ -16,9 +17,25 @@ const robotIcon = new L.Icon({
   popupAnchor: [0, -32],
 });
 
-// Component to update map center
-function MapUpdater({ robotPosition }) {
+// Custom waypoint marker icon
+const waypointIcon = new L.Icon({
+  iconUrl: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iOCIgZmlsbD0iIzEwYjk4MSIgc3Ryb2tlPSIjMjJkM2VlIiBzdHJva2Utd2lkdGg9IjIiLz48L3N2Zz4=',
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+  popupAnchor: [0, -14],
+});
+
+// Component to update map center and handle clicks
+function MapInteraction({ robotPosition, onMapClick, isAddingWaypoint }) {
   const map = useMap();
+  
+  useMapEvents({
+    click: (e) => {
+      if (isAddingWaypoint) {
+        onMapClick(e.latlng);
+      }
+    },
+  });
   
   useEffect(() => {
     if (robotPosition) {
@@ -41,6 +58,9 @@ export default function TeleopPanel() {
   const [joystickActive, setJoystickActive] = useState(false);
   const [velocityDisplay, setVelocityDisplay] = useState({ linear: 0, angular: 0 });
   const [robotPosition, setRobotPosition] = useState({ x: 0, y: 0, heading: 0 });
+  const [waypoints, setWaypoints] = useState([]);
+  const [isAddingWaypoint, setIsAddingWaypoint] = useState(false);
+  const [selectedWaypoint, setSelectedWaypoint] = useState(null);
   const velocityRef = useRef({ linear: 0, angular: 0 });
   const velocitySendIntervalRef = useRef(null);
 
@@ -85,7 +105,6 @@ export default function TeleopPanel() {
           const distance = Math.min(data.distance / 105, 1);
           const angle = data.angle.radian;
 
-          // Convert joystick angle to robot linear and angular velocity
           const linear = distance * Math.cos(angle - Math.PI / 2);
           const angular = distance * Math.sin(angle - Math.PI / 2);
 
@@ -101,7 +120,6 @@ export default function TeleopPanel() {
           setJoystickActive(false);
         });
 
-      // Send velocity commands periodically
       velocitySendIntervalRef.current = setInterval(() => {
         if (websocketService.isConnected() && !isEmergencyStop) {
           websocketService.send('control', {
@@ -111,7 +129,7 @@ export default function TeleopPanel() {
             mode: mode,
           });
         }
-      }, 100); // Send commands 10 times per second
+      }, 100);
 
       return () => {
         if (joystickInstance.current) {
@@ -132,7 +150,6 @@ export default function TeleopPanel() {
     let linear = 0;
     let angular = 0;
 
-    // Map button actions to velocity values
     switch (action) {
       case 'move_forward':
         linear = 0.5;
@@ -185,6 +202,47 @@ export default function TeleopPanel() {
     });
   };
 
+  const handleMapClick = (latLng) => {
+    // Convert lat/lng back to robot coordinates
+    const x = (latLng.lng - BTM_CENTER[1]) / SCALE_FACTOR;
+    const y = (latLng.lat - BTM_CENTER[0]) / SCALE_FACTOR;
+    
+    const newWaypoint = {
+      id: Date.now(),
+      x: parseFloat(x.toFixed(2)),
+      y: parseFloat(y.toFixed(2)),
+      lat: latLng.lat,
+      lng: latLng.lng,
+      timestamp: new Date().toLocaleTimeString()
+    };
+    
+    setWaypoints([...waypoints, newWaypoint]);
+    setIsAddingWaypoint(false);
+  };
+
+  const removeWaypoint = (id) => {
+    setWaypoints(waypoints.filter(w => w.id !== id));
+    if (selectedWaypoint?.id === id) {
+      setSelectedWaypoint(null);
+    }
+  };
+
+  const navigateToWaypoint = (waypoint) => {
+    // Send navigation command to backend
+    websocketService.send('control', {
+      action: 'navigate_to',
+      target_x: waypoint.x,
+      target_y: waypoint.y,
+      mode: mode,
+    });
+    setSelectedWaypoint(waypoint);
+  };
+
+  const clearAllWaypoints = () => {
+    setWaypoints([]);
+    setSelectedWaypoint(null);
+  };
+
   const getVelocityColor = () => {
     const speed = Math.abs(velocityDisplay.linear);
     if (speed < 0.2) return 'text-slate-400';
@@ -207,12 +265,27 @@ export default function TeleopPanel() {
       <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-4 pr-2">
         {/* Map Container */}
         <div className="bg-slate-800 rounded-lg border border-slate-700 p-3 shadow-lg flex-shrink-0">
-          <h3 className="text-sm font-semibold text-cyan-300 mb-2">📍 Robot Location - BTM, Bangalore</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold text-cyan-300">📍 Robot Location - BTM, Bangalore</h3>
+            <button
+              onClick={() => setIsAddingWaypoint(!isAddingWaypoint)}
+              className={`px-2 py-1 rounded text-xs font-semibold transition-all ${
+                isAddingWaypoint
+                  ? 'bg-yellow-600 text-white shadow-lg'
+                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+              title="Click on map to add waypoints"
+            >
+              <Flag className="inline w-3 h-3 mr-1" />
+              {isAddingWaypoint ? 'Click map to add waypoint' : 'Add Waypoint'}
+            </button>
+          </div>
+          
           <div className="rounded-lg overflow-hidden border border-slate-600" style={{ height: '280px' }}>
             <MapContainer
               center={BTM_CENTER}
               zoom={18}
-              style={{ height: '100%', width: '100%' }}
+              style={{ height: '100%', width: '100%', cursor: isAddingWaypoint ? 'crosshair' : 'grab' }}
               attributionControl={false}
             >
               <TileLayer
@@ -229,9 +302,38 @@ export default function TeleopPanel() {
                   </div>
                 </Popup>
               </Marker>
-              <MapUpdater robotPosition={robotPosition} />
+              
+              {waypoints.map((waypoint) => (
+                <Marker key={waypoint.id} position={[waypoint.lat, waypoint.lng]} icon={waypointIcon}>
+                  <Popup>
+                    <div className="text-sm">
+                      <p className="font-semibold">📍 Waypoint</p>
+                      <p>X: {waypoint.x.toFixed(2)}m</p>
+                      <p>Y: {waypoint.y.toFixed(2)}m</p>
+                      <p className="text-xs text-slate-500">{waypoint.timestamp}</p>
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={() => navigateToWaypoint(waypoint)}
+                          className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-500"
+                        >
+                          Navigate
+                        </button>
+                        <button
+                          onClick={() => removeWaypoint(waypoint.id)}
+                          className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-500"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </Popup>
+                </Marker>
+              ))}
+              
+              <MapInteraction robotPosition={robotPosition} onMapClick={handleMapClick} isAddingWaypoint={isAddingWaypoint} />
             </MapContainer>
           </div>
+          
           <div className="mt-2 text-xs text-slate-400 grid grid-cols-3 gap-2">
             <div className="bg-slate-700/50 p-2 rounded">
               <p className="text-slate-500">X</p>
@@ -248,7 +350,67 @@ export default function TeleopPanel() {
           </div>
         </div>
 
-        {/* Emergency Stop Button - Positioned at Top for Safety */}
+        {/* Waypoints List */}
+        {waypoints.length > 0 && (
+          <div className="bg-slate-800 rounded-lg border border-slate-700 p-3 shadow-lg flex-shrink-0">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-emerald-300">
+                📍 Waypoints ({waypoints.length})
+              </h3>
+              <button
+                onClick={clearAllWaypoints}
+                className="px-2 py-1 rounded text-xs font-semibold bg-red-900/40 text-red-300 hover:bg-red-900/60 transition-all"
+              >
+                <Trash2 className="inline w-3 h-3 mr-1" />
+                Clear All
+              </button>
+            </div>
+            <div className="space-y-2 max-h-32 overflow-y-auto">
+              {waypoints.map((waypoint, idx) => (
+                <div
+                  key={waypoint.id}
+                  className={`p-2 rounded-lg border transition-all cursor-pointer ${
+                    selectedWaypoint?.id === waypoint.id
+                      ? 'bg-emerald-900/40 border-emerald-600'
+                      : 'bg-slate-700/50 border-slate-600 hover:border-slate-500'
+                  }`}
+                  onClick={() => setSelectedWaypoint(waypoint)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <p className="text-xs font-semibold text-emerald-400">WP-{idx + 1}</p>
+                      <p className="text-xs text-slate-400">
+                        X: {waypoint.x.toFixed(2)}m | Y: {waypoint.y.toFixed(2)}m
+                      </p>
+                    </div>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigateToWaypoint(waypoint);
+                        }}
+                        className="px-2 py-1 rounded text-xs font-semibold bg-blue-900/60 text-blue-300 hover:bg-blue-900/80 transition-all"
+                      >
+                        Go
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeWaypoint(waypoint.id);
+                        }}
+                        className="px-1 py-1 rounded text-xs font-semibold bg-red-900/60 text-red-300 hover:bg-red-900/80 transition-all"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Emergency Stop Button */}
         <button
           onClick={handleEmergencyStop}
           className={`w-full font-bold py-3 rounded-lg text-white transition-all transform hover:scale-105 active:scale-95 shadow-lg flex-shrink-0 ${
@@ -260,7 +422,7 @@ export default function TeleopPanel() {
           {isEmergencyStop ? '🛑 EMERGENCY STOP - ACTIVE' : '🛑 EMERGENCY STOP'}
         </button>
 
-        {/* Joystick Container with Enhanced Styling */}
+        {/* Joystick Container */}
         <div
           ref={joystickContainer}
           className={`relative rounded-lg border-2 transition-all flex flex-col items-center justify-center flex-shrink-0 ${
@@ -317,7 +479,7 @@ export default function TeleopPanel() {
           </div>
         </div>
 
-        {/* Quick Button Controls with Enhanced Styling */}
+        {/* Quick Button Controls */}
         <div className="grid grid-cols-4 gap-2 flex-shrink-0">
           <button
             onClick={() => sendButtonCommand('move_forward')}
