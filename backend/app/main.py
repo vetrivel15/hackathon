@@ -147,6 +147,38 @@ async def handle_robot_errors(topic: str, payload: Any) -> None:
         logger.error(f"Error handling robot errors: {e}")
 
 
+async def handle_robot_joints(topic: str, payload: Any) -> None:
+    """Handle robot joints messages."""
+    try:
+        if not isinstance(payload, dict):
+            return
+
+        parts = topic.split("/")
+        robot_id = parts[-1] if len(parts) > 2 else payload.get("robot_id", "unknown")
+
+        # Broadcast to WebSocket clients
+        await ws_manager.broadcast_joints(robot_id, payload)
+
+    except Exception as e:
+        logger.error(f"Error handling robot joints: {e}")
+
+
+async def handle_robot_gps(topic: str, payload: Any) -> None:
+    """Handle robot GPS messages."""
+    try:
+        if not isinstance(payload, dict):
+            return
+
+        parts = topic.split("/")
+        robot_id = parts[-1] if len(parts) > 2 else payload.get("robot_id", "unknown")
+
+        # Broadcast to WebSocket clients
+        await ws_manager.broadcast_gps(robot_id, payload)
+
+    except Exception as e:
+        logger.error(f"Error handling robot GPS: {e}")
+
+
 def _cancel_dummy_task() -> None:
     task = getattr(app.state, "dummy_task", None)
     if task and not task.done():
@@ -194,6 +226,8 @@ async def on_startup() -> None:
     mqtt_manager.register_handler("robot/status/*", handle_robot_status)
     mqtt_manager.register_handler("robot/pose/*", handle_robot_pose)
     mqtt_manager.register_handler("robot/errors/*", handle_robot_errors)
+    mqtt_manager.register_handler("robot/joints/*", handle_robot_joints)
+    mqtt_manager.register_handler("robot/gps/*", handle_robot_gps)
 
     # Start MQTT connection
     mqtt_manager.start()
@@ -297,10 +331,51 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     await ws_manager.connect(websocket)
     try:
         while True:
-            # Keep connection alive and handle incoming messages
-            data = await websocket.receive_text()
-            # Echo back or handle client messages if needed
-            await websocket.send_text(f"Server received: {data}")
+            # Receive JSON messages from frontend
+            try:
+                data = await websocket.receive_json()
+
+                # Route commands to appropriate MQTT topics
+                if data.get('type') == 'cmd_vel':
+                    # Joystick control - velocity commands
+                    robot_id = data.get('robot_id', 'robot_01')
+                    mqtt_manager.publish_event(
+                        f"robot/cmd_vel/{robot_id}",
+                        {
+                            "linear": data.get('linear', 0.0),
+                            "angular": data.get('angular', 0.0)
+                        }
+                    )
+                    logger.info(f"CMD_VEL: robot={robot_id}, linear={data.get('linear')}, angular={data.get('angular')}")
+
+                elif data.get('type') == 'teleop':
+                    # Teleop commands (sit, stand, walk, etc.)
+                    robot_id = data.get('robot_id', 'robot_01')
+                    mqtt_manager.publish_event(
+                        f"robot/teleop/{robot_id}",
+                        {
+                            "cmd": data.get('command', ''),
+                            "params": data.get('params', {})
+                        }
+                    )
+                    logger.info(f"TELEOP: robot={robot_id}, cmd={data.get('command')}")
+
+                elif data.get('type') == 'mode':
+                    # Mode switching (sitting, standing, walking, running)
+                    robot_id = data.get('robot_id', 'robot_01')
+                    mqtt_manager.publish_event(
+                        f"robot/mode/{robot_id}",
+                        {
+                            "mode": data.get('mode', 'standing')
+                        }
+                    )
+                    logger.info(f"MODE: robot={robot_id}, mode={data.get('mode')}")
+
+            except json.JSONDecodeError:
+                # Handle non-JSON messages
+                text_data = await websocket.receive_text()
+                logger.warning(f"Received non-JSON message: {text_data[:100]}")
+
     except WebSocketDisconnect:
         await ws_manager.disconnect(websocket)
 

@@ -97,6 +97,24 @@ class WebSocketManager:
         }
         await self.broadcast(message)
 
+    async def broadcast_joints(self, robot_id: str, joints_data: Dict[str, Any]) -> None:
+        """Broadcast robot joints update to all clients."""
+        message = {
+            "type": "joints",
+            "robot_id": robot_id,
+            "data": joints_data,
+        }
+        await self.broadcast(message)
+
+    async def broadcast_gps(self, robot_id: str, gps_data: Dict[str, Any]) -> None:
+        """Broadcast robot GPS update to all clients."""
+        message = {
+            "type": "gps",
+            "robot_id": robot_id,
+            "data": gps_data,
+        }
+        await self.broadcast(message)
+
     async def send_to_client(self, websocket: WebSocket, message: Dict[str, Any]) -> None:
         """Send message to a specific client."""
         try:
