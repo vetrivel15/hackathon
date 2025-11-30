@@ -43,7 +43,7 @@ The current local-only implementation must evolve into a **scalable, secure, mul
    - Path planning
    - Fleet orchestration
    - Logging dashboards (Grafana / Cloud Monitoring)
-7. Maintain system simplicity for hackathon deployment while enabling enterprise evolution.
+7. Maintain system simplicity for deployment while enabling enterprise evolution.
 8. Use **only open-source technologies**.
 
 ---
@@ -1713,7 +1713,7 @@ Orderly shutdown:
 
 ## **7.2 Deployment Model (Phase 1 — Local Deployment)**
 
-### *As used for hackathon and initial development.*
+### *Used for initial development.*
 
 All components run on a single machine connected to a **local Wi-Fi LAN**.
 The robot is on the same LAN.
@@ -1771,7 +1771,7 @@ The robot is on the same LAN.
 
 * Simple setup
 * Best possible latency
-* Perfect for demos/hackathons
+* Perfect for demos
 * No cloud billing
 * Reproducible and offline-capable
 
@@ -1967,7 +1967,7 @@ This is the **future target architecture**.
 
 | Deployment Phase     | Key Attributes                               |
 | -------------------- | -------------------------------------------- |
-| **Phase 1 (Local)**  | Simple, LAN-based, no cloud, hackathon-ready |
+| **Phase 1 (Local)**  | Simple, LAN-based, no cloud |
 | **Phase 2 (Hybrid)** | Cloud UI + backend, robot local              |
 | **Phase 3 (Cloud)**  | Fully cloud-native, global multi-robot       |
 | **Future Expansion** | Fleet management, dashboards, IAM, logs      |
@@ -2511,7 +2511,7 @@ Backend is implemented in **Python**.
 * Fast developer productivity
 * Abundant libraries (paho-mqtt, websockets, FastAPI)
 * Excellent for robotics integration
-* Easy for hackathon teams to iterate
+* Easy for teams to iterate
 * Portable and container-friendly
 
 ### **Alternatives Considered**
@@ -2521,7 +2521,7 @@ Backend is implemented in **Python**.
 | Node.js | Weaker robotics tooling, less stability for MQTT |
 | Go      | High performance but slower development speed    |
 | C++     | Too heavy for backend; complexity too high       |
-| Rust    | Overkill for hackathon; steep learning curve     |
+| Rust    | steep learning curve     |
 
 ### **Consequences**
 
@@ -2614,7 +2614,7 @@ Use **WebSocket** push from backend → UI.
 
 ### **Context**
 
-Hackathon requirement: system must run entirely on one machine.
+Requirement: system must run entirely on one machine.
 
 ### **Decision**
 
@@ -2764,7 +2764,7 @@ Rejected due to lower scalability.
 
 ### **Context**
 
-Needs local MQTT broker for hackathon.
+Needs local MQTT broker for simple application.
 
 ### **Decision**
 
@@ -2894,11 +2894,11 @@ Use Google Identity Platform + Firebase Auth.
 
 ---
 
-## **ADR-015: Minimal Dependencies for Hackathon Robustness**
+## **ADR-015: Minimal Dependencies for Robustness**
 
 ### **Context**
 
-Hackathon demos can break if environment too complex.
+Demos can break if environment too complex.
 
 ### **Decision**
 
@@ -3047,7 +3047,7 @@ System must feel “real-time”.
 
 ### **10.3.3 Developer Experience**
 
-For rapid development and hackathon setup:
+For rapid development and setup:
 
 * System runs in <2 minutes
 * Minimal dependencies
@@ -3309,7 +3309,7 @@ We break risks into:
 
 ## **11.2 Operational Risks**
 
-### **O1 — Network Instability in Hackathon Venue**
+### **O1 — Network Instability in Venue**
 
 **Description:** Wi-Fi congestion impacts control communication.
 **Impact:** High
