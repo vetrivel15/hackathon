@@ -1,0 +1,160 @@
+{
+  "kinematics": {
+    "topic": "mobile_robot/mobile/kinematics/data",
+    "current_position": {
+      "x": -2.25,
+      "y": -2.25,
+      "z": 0.0,
+      "theta": 0.0
+    },
+    "statistics": {
+      "total_distance_traveled_m": 6.75,
+      "average_velocity_ms": 0.75,
+      "max_velocity_reached_ms": 0.75,
+      "average_acceleration_ms2": 0.0,
+      "path_points_logged": 6,
+      "movement_efficiency": 0.375
+    },
+    "timestamp": "2025-11-30T19:07:57.007212Z"
+  },
+  "health": {
+    "topic": "mobile_robot/mobile/health/status",
+    "data": {
+      "timestamp": "2025-11-30T19:07:57.007212Z",
+      "cycle_counter": 13,
+      "battery": {
+        "level_percent": 98.70000000000007,
+        "voltage": 24.0,
+        "status": "NORMAL"
+      },
+      "system": {
+        "temperature_celsius": 26.5,
+        "uptime_seconds": 1360,
+        "uptime_formatted": "0:22:40",
+        "maintenance_due": false,
+        "last_maintenance": "2025-11-30T18:45:16.032651Z"
+      },
+      "errors": {
+        "recent_count": 0,
+        "latest": null
+      }
+    },
+    "timestamp": "2025-11-30T19:07:57.007212Z"
+  },
+  "drive_response": {
+    "topic": "mobile_robot/mobile/drive/response",
+    "command": {
+      "direction": "right",
+      "speed": 0.5,
+      "duration": 1.5,
+      "timestamp": "2025-11-30T18:48:43.902510Z"
+    },
+    "result": {
+      "status": "SUCCESS",
+      "executed_movement": {
+        "dx": 0,
+        "dy": -1.125,
+        "dtheta": 0
+      },
+      "new_position": {
+        "x": -2.25,
+        "y": -2.25,
+        "z": 0.0,
+        "theta": 0.0
+      },
+      "velocity": {
+        "linear": 0.75,
+        "angular": 0.0
+      }
+    },
+    "timestamp": "2025-11-30T18:48:43.908902Z"
+  },
+  "system_status": {
+    "topic": "mobile_robot/mobile/system/status",
+    "status": "RUNNING",
+    "uptime": 1360,
+    "commands_processed": 13,
+    "timestamp": "2025-11-30T19:07:57.007212Z"
+  },
+  "software_updates": {
+    "topic": "mobile_robot/mobile/software/updates",
+    "components": [
+      {
+        "name": "Robot Control System",
+        "current_version": "2.1.4",
+        "latest_version": "2.1.4",
+        "description": "Core navigation and control algorithms",
+        "size_mb": 12.3,
+        "status": "up_to_date",
+        "last_updated": "2025-11-28T10:30:00Z"
+      },
+      {
+        "name": "Security Patches",
+        "current_version": "1.8.1",
+        "latest_version": "1.8.2",
+        "description": "Latest security updates and patches",
+        "size_mb": 5.7,
+        "status": "update_available",
+        "last_updated": "2025-11-25T14:15:00Z"
+      },
+      {
+        "name": "AI Navigation Module",
+        "current_version": "3.2.1",
+        "latest_version": "3.2.1",
+        "description": "Enhanced pathfinding and obstacle avoidance",
+        "size_mb": 28.5,
+        "status": "up_to_date",
+        "last_updated": "2025-11-29T09:45:00Z"
+      },
+      {
+        "name": "MQTT Communication",
+        "current_version": "1.4.6",
+        "latest_version": "1.4.7",
+        "description": "Real-time communication protocol updates",
+        "size_mb": 8.2,
+        "status": "update_available",
+        "last_updated": "2025-11-27T16:20:00Z"
+      }
+    ],
+    "last_check": "2025-11-30T19:07:57.007212Z",
+    "auto_update_enabled": true,
+    "timestamp": "2025-11-30T19:07:57.007212Z"
+  },
+  "system_diagnostics": {
+    "topic": "mobile_robot/mobile/system/diagnostics",
+    "data": {
+      "system_health": {
+        "overall_status": "healthy",
+        "cpu_usage": 28.1,
+        "memory_usage": 62.4,
+        "disk_usage": 75.1,
+        "temperature": 57.1,
+        "voltage": 23.5,
+        "current_draw": 2.3,
+        "error_count": 2,
+        "wifi_signal": -50
+      },
+      "uptime": {
+        "seconds": 1360,
+        "formatted": "0d 0h 22m"
+      },
+      "network": {
+        "status": "connected",
+        "ip_address": "192.168.1.100",
+        "gateway": "192.168.1.1",
+        "dns": [
+          "8.8.8.8",
+          "8.8.4.4"
+        ]
+      },
+      "storage": {
+        "total_gb": 32.0,
+        "used_gb": 24.0,
+        "available_gb": 8.0,
+        "last_backup": "2025-11-29T10:30:00Z"
+      }
+    },
+    "timestamp": "2025-11-30T19:07:57.007212Z"
+  },
+  "timestamp": "2025-11-30T19:07:57.007212Z"
+}

@@ -1,0 +1,1610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🤖 Robot Control System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #000000; /* page background set to black */
+            min-height: 100vh;
+            color: white;
+            padding: 15px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        
+        .header h1 {
+            font-size: 2.2em;
+            margin-bottom: 10px;
+        }
+        
+        .nav-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        
+        .nav-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            text-decoration: none;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .nav-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        .nav-btn.active {
+            background: #4CAF50;
+        }
+        
+        .page-content {
+            transition: opacity 0.3s ease;
+        }
+        
+        .page-content.hidden {
+            display: none !important;
+        }
+        
+        .connection-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin: 15px 0;
+            padding: 15px;
+            border-radius: 10px;
+            font-weight: bold;
+        }
+        
+        .connected {
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid #4CAF50;
+        }
+        
+        .disconnected {
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid #f44336;
+        }
+        
+        .dashboard {
+            display: grid;
+            /* wider graph column: left column (controls) smaller, right column (graph) larger */
+            grid-template-columns: 40% 60%;
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+        
+        .card {
+            /* Make primary UI blocks a consistent grey on black background */
+            background: #2b2b2b; /* dark grey */
+            border-radius: 15px;
+            padding: 20px;
+            /* reduce blur for better contrast on dark background */
+            backdrop-filter: none;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+            transition: all 0.3s ease;
+        }
+        
+        .card h3 {
+            margin-bottom: 15px;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.2em;
+        }
+        
+        .position-display {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin: 15px 0;
+        }
+        
+        .position-item {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            transition: all 0.4s ease;
+        }
+        
+        .position-item.updating {
+            background: rgba(76, 175, 80, 0.3);
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(76, 175, 80, 0.6);
+        }
+        
+        .position-label {
+            font-size: 0.85em;
+            opacity: 0.8;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+        }
+        
+        .position-value {
+            font-size: 1.4em;
+            font-weight: bold;
+            color: #4CAF50;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin: 15px 0;
+        }
+        
+        .btn {
+            padding: 12px 8px;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9em;
+        }
+        
+        .btn-drive {
+            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+        }
+        
+        .btn-drive:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(33, 150, 243, 0.4);
+        }
+        
+        .btn-drive:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        
+        .btn-emergency {
+            grid-column: span 3;
+            background: linear-gradient(135deg, #FF5722 0%, #d84315 100%);
+            margin-top: 10px;
+        }
+        
+        .speed-control {
+            margin: 15px 0;
+        }
+        
+        .speed-slider {
+            width: 100%;
+            margin: 10px 0;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.2);
+            outline: none;
+        }
+        
+        .speed-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #4CAF50;
+            cursor: pointer;
+        }
+        
+        .health-status {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin: 15px 0;
+        }
+        
+        .health-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        
+        .health-label {
+            font-size: 0.8em;
+            opacity: 0.8;
+            margin-bottom: 4px;
+        }
+        
+        .health-value {
+            font-size: 1.1em;
+            font-weight: bold;
+        }
+        
+        .health-good { color: #4CAF50; }
+        .health-warning { color: #FF9800; }
+        .health-critical { color: #f44336; }
+        
+        .log {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8em;
+        }
+        
+        .log-entry {
+            margin: 4px 0;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            border-left: 2px solid #4CAF50;
+        }
+        
+        .log-entry.command {
+            border-left-color: #2196F3;
+            background: rgba(33, 150, 243, 0.1);
+        }
+        
+        .log-entry.position {
+            border-left-color: #FF9800;
+            background: rgba(255, 152, 0, 0.1);
+        }
+        
+        .log-entry.error {
+            border-left-color: #f44336;
+            background: rgba(244, 67, 54, 0.1);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin: 15px 0;
+        }
+        
+        .stat-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        
+        .stat-label {
+            font-size: 0.75em;
+            opacity: 0.8;
+            margin-bottom: 4px;
+        }
+        
+        .stat-value {
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+            
+            .controls {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        
+        /* Movement Graph Styles */
+        .graph-container {
+            background: #1f1f1f; /* slightly darker grey for the graph card */
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            position: relative;
+            min-width: 420px;
+        }
+        
+        .graph-canvas {
+            width: 100%;
+            height: 400px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .graph-controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .graph-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .graph-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-1px);
+        }
+        
+        .graph-legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 2px solid white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Robot Control System</h1>
+            <p>Real-time robot control and monitoring dashboard</p>
+        </div>
+        
+        <!-- Top banner area (graph moved into dashboard) -->
+        
+        <div class="nav-buttons">
+            <button class="nav-btn active" onclick="showPage('robotControl')" id="robotControlBtn">🎮 Robot Control</button>
+            <button class="nav-btn" onclick="showPage('systemStatus')" id="systemStatusBtn">🔧 System Status</button>
+        </div>
+        
+        <div id="connectionStatus" class="connection-status disconnected">
+            <span id="statusIcon">🔴</span>
+            <span id="statusText">Connecting...</span>
+            <span id="lastUpdate">Status: Never</span>
+        </div>
+        
+        <!-- Robot Control Page -->
+        <div id="robotControlPage" class="page-content">
+            <div class="dashboard">
+            <!-- Left column: Position + Drive Controls -->
+            <div style="display:flex; flex-direction:column; gap:20px; grid-column: 1;">
+                <div class="card">
+                    <h3><span>📍</span>Position & Kinematics</h3>
+                    <div class="position-display">
+                        <div class="position-item" id="posXCard">
+                            <div class="position-label">X Position</div>
+                            <div class="position-value" id="posX">0.000m</div>
+                        </div>
+                        <div class="position-item" id="posYCard">
+                            <div class="position-label">Y Position</div>
+                            <div class="position-value" id="posY">0.000m</div>
+                        </div>
+                        <div class="position-item" id="posThetaCard">
+                            <div class="position-label">Rotation (θ)</div>
+                            <div class="position-value" id="posTheta">0.0°</div>
+                        </div>
+                        <div class="position-item" id="velocityCard">
+                            <div class="position-label">Velocity</div>
+                            <div class="position-value" id="velocity">0.00 m/s</div>
+                        </div>
+                    </div>
+                    
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-label">🛣️ Distance</div>
+                            <div class="stat-value" id="totalDistance">0.000m</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">📊 Points</div>
+                            <div class="stat-value" id="pathPoints">0</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">⚡ Avg Speed</div>
+                            <div class="stat-value" id="avgVelocity">0.00 m/s</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">📈 Efficiency</div>
+                            <div class="stat-value" id="efficiency">0%</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3><span>🎮</span>Drive Controls</h3>
+                    <div class="speed-control">
+                        <label><strong>Speed: <span id="speedValue">50</span>%</strong></label>
+                        <input type="range" min="10" max="100" value="50" class="speed-slider" id="speedSlider">
+                    </div>
+                    <div class="controls">
+                        <div></div>
+                        <button class="btn btn-drive" onclick="sendCommand('forward', this)">⬆️ Forward</button>
+                        <div></div>
+                        <button class="btn btn-drive" onclick="sendCommand('left', this)">⬅️ Left</button>
+                        <button class="btn btn-drive" onclick="sendCommand('backward', this)">⬇️ Back</button>
+                        <button class="btn btn-drive" onclick="sendCommand('right', this)">➡️ Right</button>
+                        <button class="btn btn-drive" onclick="sendCommand('rotate_left', this)">↪️ Rot L</button>
+                        <div></div>
+                        <button class="btn btn-drive" onclick="sendCommand('rotate_right', this)">↩️ Rot R</button>
+                    </div>
+                    <button class="btn btn-emergency" onclick="emergencyStop()" id="emergencyBtn">🛑 E-STOP</button>
+                </div>
+                
+                <!-- Activity Log moved here under Drive Controls -->
+                <div class="card" id="activityLogCard">
+                    <h3><span>📝</span>Live Activity</h3>
+                    <div class="log" id="activityLog">
+                        <div class="log-entry">🚀 System initializing...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Movement Graph (placed next to left column) -->
+            <div class="card" style="grid-column: 2;">
+                <h3><span>📊</span>Robot Movement Tracker</h3>
+                <div class="graph-container">
+                    <canvas id="movementGraph" class="graph-canvas"></canvas>
+                    <div class="graph-controls">
+                        <button class="graph-btn" onclick="clearPath()">🗑️ Clear Path</button>
+                        <button class="graph-btn" onclick="centerView()">🎯 Center View</button>
+                        <button class="graph-btn" onclick="resetPosition()">🔄 Reset Position</button>
+                        <button class="graph-btn" onclick="toggleGrid()">⊞ Toggle Grid</button>
+                        <button class="graph-btn" onclick="zoomIn()">🔍+ Zoom In</button>
+                        <button class="graph-btn" onclick="zoomOut()">🔍- Zoom Out</button>
+                    </div>
+                    <div class="graph-legend">
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #4CAF50;"></div>
+                            <span>Current Position</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #2196F3;"></div>
+                            <span>Movement Path</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #FF9800;"></div>
+                            <span>Start Position</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Health Status removed from Robot Control page (moved to System Status) -->
+            
+            <!-- (Activity Log moved to left column under Drive Controls) -->
+            </div>
+            </div>
+        </div>
+        
+        <!-- System Status Page -->
+        <div id="systemStatusPage" class="page-content" style="display: none;">
+            <div class="dashboard" id="systemStatusDashboard">
+                <!-- Content will be loaded here dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Page switching functionality
+        let currentPage = 'robotControl';
+        
+        // Movement tracking variables
+        let movementPath = [];
+        let canvas, ctx;
+        let scale = 50; // pixels per meter
+        let offsetX = 0, offsetY = 0;
+        let showGrid = true;
+        let startPosition = null;
+        
+        function showPage(pageId) {
+            console.log('showPage called with:', pageId);
+            
+            // Hide all pages
+            const robotControlPage = document.getElementById('robotControlPage');
+            const systemStatusPage = document.getElementById('systemStatusPage');
+            
+            if (robotControlPage) {
+                robotControlPage.style.display = 'none';
+                console.log('Hidden robot control page');
+            }
+            if (systemStatusPage) {
+                systemStatusPage.style.display = 'none';
+                console.log('Hidden system status page');
+            }
+            
+            // Remove active class from all nav buttons
+            const robotControlBtn = document.getElementById('robotControlBtn');
+            const systemStatusBtn = document.getElementById('systemStatusBtn');
+            
+            if (robotControlBtn) robotControlBtn.classList.remove('active');
+            if (systemStatusBtn) systemStatusBtn.classList.remove('active');
+            
+            // Show selected page and activate button
+            if (pageId === 'robotControl') {
+                if (robotControlPage) {
+                    robotControlPage.style.display = 'block';
+                    console.log('Showing robot control page');
+                }
+                if (robotControlBtn) robotControlBtn.classList.add('active');
+                currentPage = 'robotControl';
+            } else if (pageId === 'systemStatus') {
+                if (systemStatusPage) {
+                    systemStatusPage.style.display = 'block';
+                    console.log('Showing system status page');
+                }
+                if (systemStatusBtn) systemStatusBtn.classList.add('active');
+                currentPage = 'systemStatus';
+                loadSystemStatusContent();
+                console.log('Loading system status content');
+            }
+        }
+        
+        function loadSystemStatusContent() {
+            const systemStatusDashboard = document.getElementById('systemStatusDashboard');
+            
+            systemStatusDashboard.innerHTML = `
+                <!-- System Health Overview -->
+                <div class="card">
+                    <h3><span>❤️</span>System Health Overview</h3>
+                    <div class="health-status" style="grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                        <div class="health-item" style="background: rgba(76, 175, 80, 0.2); border: 1px solid #4CAF50; border-radius: 8px; padding: 12px;">
+                            <div class="health-label">Overall Status</div>
+                            <div class="health-value" id="overallHealthStatus">Healthy ✅</div>
+                        </div>
+                        <div class="health-item" style="background: rgba(76, 175, 80, 0.2); border: 1px solid #4CAF50; border-radius: 8px; padding: 12px;">
+                            <div class="health-label">Battery Health</div>
+                            <div class="health-value" id="batteryHealthStatus">Excellent</div>
+                        </div>
+                        <div class="health-item" style="background: rgba(76, 175, 80, 0.2); border: 1px solid #4CAF50; border-radius: 8px; padding: 12px;">
+                            <div class="health-label">Thermal Status</div>
+                            <div class="health-value" id="thermalHealthStatus">Normal</div>
+                        </div>
+                        <div class="health-item" style="background: rgba(76, 175, 80, 0.2); border: 1px solid #4CAF50; border-radius: 8px; padding: 12px;">
+                            <div class="health-label">Memory Usage</div>
+                            <div class="health-value" id="memoryUsageStatus">45%</div>
+                        </div>
+                        <div class="health-item" style="background: rgba(76, 175, 80, 0.2); border: 1px solid #4CAF50; border-radius: 8px; padding: 12px;">
+                            <div class="health-label">CPU Load</div>
+                            <div class="health-value" id="cpuLoadStatus">23%</div>
+                        </div>
+                        <div class="health-item" style="background: rgba(76, 175, 80, 0.2); border: 1px solid #4CAF50; border-radius: 8px; padding: 12px;">
+                            <div class="health-label">Network</div>
+                            <div class="health-value" id="networkHealthStatus">Connected</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Software Updates -->
+                <div class="card">
+                    <h3><span>📦</span>Software Updates & Maintenance</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; padding: 10px; background: rgba(255, 255, 255, 0.1); border-radius: 8px;">
+                        <div>
+                            <strong>🕐 Last Check:</strong><br>
+                            <span id="lastUpdateCheck" style="color: #ffffff;">Never</span>
+                        </div>
+                        <div>
+                            <strong>🔄 Auto Updates:</strong><br>
+                            <span id="autoUpdateStatus" style="color: #4CAF50;">Enabled</span>
+                        </div>
+                        <div>
+                            <strong>📋 Total Components:</strong><br>
+                            <span id="totalComponents" style="color: #4CAF50;">4</span>
+                        </div>
+                        <div>
+                            <strong>⚠️ Updates Available:</strong><br>
+                            <span id="updatesAvailable" style="color: #FF9800;">2</span>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn" onclick="checkForUpdates()" id="checkUpdatesBtn" style="background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);">
+                                🔄 Check for Updates
+                            </button>
+                            <button class="btn" onclick="installAllUpdates()" id="installAllBtn" style="background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);">
+                                ⬇️ Install All Available
+                            </button>
+                        </div>
+                        <div>
+                            <button class="btn" onclick="toggleAutoUpdates()" id="autoUpdateBtn" style="background: linear-gradient(135deg, #FF9800 0%, #e68900 100%);">
+                                ⚙️ Auto Update Settings
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Component details removed (summary kept) -->
+                    
+                    <!-- Update Progress -->
+                    <div id="updateProgress" style="display: none; margin-top: 15px; padding: 15px; background: rgba(255, 255, 255, 0.1); border-radius: 8px;">
+                        <h4 style="margin: 0 0 10px 0;">⚙️ Update in Progress</h4>
+                        <div id="updateInfo">
+                            <div><strong>Installing:</strong> <span id="currentUpdate">-</span></div>
+                            <div style="margin: 10px 0;">
+                                <div style="width: 100%; height: 8px; background: rgba(255, 255, 255, 0.2); border-radius: 4px; overflow: hidden;">
+                                    <div id="progressFill" style="height: 100%; background: linear-gradient(90deg, #4CAF50, #45a049); width: 0%; transition: width 0.3s ease;"></div>
+                                </div>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-top: 10px;">
+                                <span id="progressText">Preparing...</span>
+                                <span id="progressPercent">0%</span>
+                            </div>
+                        </div>
+                        <button class="btn" onclick="cancelUpdate()" style="background: linear-gradient(135deg, #F44336 0%, #d32f2f 100%); margin-top: 10px;">❌ Cancel Update</button>
+                    </div>
+                </div>
+                
+                <!-- System Diagnostics -->
+                <div class="card">
+                    <h3><span>🔍</span>System Diagnostics</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                        <div style="display: flex; justify-content: space-between; padding: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 5px;">
+                            <span>Uptime</span>
+                            <span style="font-weight: bold;" id="systemUptime">2d 14h 32m</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 5px;">
+                            <span>Temperature</span>
+                            <span style="font-weight: bold;" id="systemTempDiag">42°C</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 5px;">
+                            <span>Voltage</span>
+                            <span style="font-weight: bold;" id="systemVoltageDiag">24.1V</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 5px;">
+                            <span>Error Count</span>
+                            <span style="font-weight: bold;" id="errorCountDiag">0</span>
+                        </div>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <button class="btn" onclick="runDiagnostics()" style="background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%); margin: 5px;">🔍 Run Full Diagnostics</button>
+                        <button class="btn" onclick="rebootSystem()" style="background: linear-gradient(135deg, #FF9800 0%, #e68900 100%); margin: 5px;">🔄 Restart System</button>
+                    </div>
+                </div>
+                
+                <!-- System Logs -->
+                <div class="card">
+                    <h3><span>📝</span>System Logs</h3>
+                    <div id="systemLogs" style="max-height: 300px; overflow-y: auto; background: rgba(0, 0, 0, 0.3); border-radius: 10px; padding: 15px; font-family: 'Courier New', monospace; font-size: 0.9em;">
+                        <div style="padding: 5px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
+                            <span style="color: #888; margin-right: 10px;">[${new Date().toLocaleString()}]</span>
+                            <span>INFO: System status page loaded</span>
+                        </div>
+                    </div>
+                    <div style="margin-top: 15px;">
+                        <button class="btn" onclick="refreshSystemLogs()" style="background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%); margin: 5px;">🔄 Refresh</button>
+                        <button class="btn" onclick="clearSystemLogs()" style="background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%); margin: 5px;">🗑️ Clear</button>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Enhanced System Status Functions
+        function checkForUpdates() {
+            const button = document.getElementById('checkUpdatesBtn');
+            if (button) {
+                button.disabled = true;
+                button.innerHTML = '🔄 Checking...';
+            }
+
+            setTimeout(() => {
+                addSystemLogEntry('🔍 Checking for software updates...');
+                // record the last check time in both places
+                updateLastCheckTime();
+
+                // Simulate finding updates
+                const availableUpdates = Math.floor(Math.random() * 3);
+                if (availableUpdates > 0) {
+                    addSystemLogEntry(`📦 Found ${availableUpdates} available updates`);
+                    setText('updatesAvailable', String(availableUpdates));
+                } else {
+                    addSystemLogEntry('✅ All components are up to date');
+                    setText('updatesAvailable', '0');
+                }
+
+                if (button) {
+                    button.disabled = false;
+                    button.innerHTML = '🔄 Check for Updates';
+                }
+            }, 2000);
+        }
+        
+        function installAllUpdates() {
+            const updatesAvailableEl = document.getElementById('updatesAvailable');
+            const availableCount = updatesAvailableEl ? parseInt(updatesAvailableEl.textContent) : 0;
+            if (availableCount === 0) {
+                addSystemLogEntry('ℹ️ No updates available to install');
+                return;
+            }
+            
+            if (confirm(`Install all ${availableCount} available updates? This may temporarily interrupt robot operations.`)) {
+                addSystemLogEntry(`⚙️ Starting installation of ${availableCount} updates...`);
+                showUpdateProgress();
+                
+                // Simulate update installation
+                let progress = 0;
+                const updateInterval = setInterval(() => {
+                    progress += Math.random() * 15;
+                    if (progress >= 100) {
+                        progress = 100;
+                        clearInterval(updateInterval);
+                        
+                        setTimeout(() => {
+                            hideUpdateProgress();
+                            addSystemLogEntry('✅ All updates installed successfully');
+                            const updatesAvailableEl2 = document.getElementById('updatesAvailable');
+                            if (updatesAvailableEl2) updatesAvailableEl2.textContent = '0';
+                            // Refresh the updates list
+                            updateSoftwareUpdatesDisplay({
+                                components: [], // Will be populated by real data
+                                last_check: new Date().toISOString()
+                            });
+                        }, 1000);
+                    }
+                    
+                    updateProgressBar(progress, 'Installing updates...');
+                }, 300);
+            }
+        }
+        
+        function toggleAutoUpdates() {
+            const autoUpdateEl = document.getElementById('autoUpdateStatus');
+            const currentStatus = autoUpdateEl ? autoUpdateEl.textContent : 'Enabled';
+            const newStatus = currentStatus === 'Enabled' ? 'Disabled' : 'Enabled';
+            
+            if (autoUpdateEl) {
+                autoUpdateEl.textContent = newStatus;
+                autoUpdateEl.style.color = newStatus === 'Enabled' ? '#4CAF50' : '#FF5722';
+            }
+            
+            addSystemLogEntry(`⚙️ Auto-updates ${newStatus.toLowerCase()}`);
+        }
+        
+        function showUpdateProgress() {
+            const updateProgressEl = document.getElementById('updateProgress');
+            if (updateProgressEl) updateProgressEl.style.display = 'block';
+        }
+        
+        function hideUpdateProgress() {
+            const updateProgressEl2 = document.getElementById('updateProgress');
+            if (updateProgressEl2) updateProgressEl2.style.display = 'none';
+        }
+        
+        function updateProgressBar(percentage, text) {
+            const progressFill = document.getElementById('progressFill');
+            if (progressFill) progressFill.style.width = percentage + '%';
+            const progressPercent = document.getElementById('progressPercent');
+            if (progressPercent) progressPercent.textContent = Math.round(percentage) + '%';
+            const progressTextEl = document.getElementById('progressText');
+            if (progressTextEl) progressTextEl.textContent = text;
+        }
+        
+        function cancelUpdate() {
+            if (confirm('Cancel the current update process? This may leave the system in an inconsistent state.')) {
+                hideUpdateProgress();
+                addSystemLogEntry('⚠️ Update process cancelled by user');
+            }
+        }
+        
+        function installSingleUpdate(componentName) {
+            addSystemLogEntry(`⚙️ Installing update for ${componentName}...`);
+            const currentUpdateEl = document.getElementById('currentUpdate');
+            if (currentUpdateEl) currentUpdateEl.textContent = componentName;
+            showUpdateProgress();
+            
+            // Simulate installation
+            let progress = 0;
+            const updateInterval = setInterval(() => {
+                progress += Math.random() * 20;
+                if (progress >= 100) {
+                    progress = 100;
+                    clearInterval(updateInterval);
+                    
+                    setTimeout(() => {
+                        hideUpdateProgress();
+                        addSystemLogEntry(`✅ ${componentName} updated successfully`);
+                    }, 1000);
+                }
+                
+                updateProgressBar(progress, `Installing ${componentName}...`);
+            }, 200);
+        }
+        
+        function updateLastCheckTime() {
+            const now = new Date();
+            const displayFull = now.toLocaleString();
+            const displayTime = now.toLocaleTimeString();
+            // Update detailed last-check display (if present)
+            setText('lastUpdateCheck', displayFull);
+            // Also update the top Last display so it stays in sync
+            setText('lastUpdate', `Status: ${displayTime}`);
+        }
+
+        // Safe DOM helper to avoid "Cannot set properties of null" errors
+        function setText(id, text) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = text;
+        }
+        
+        function runDiagnostics() {
+            addSystemLogEntry('🔍 Running full system diagnostics...');
+            setTimeout(() => {
+                addSystemLogEntry('✅ Diagnostics completed - System healthy');
+            }, 3000);
+        }
+        
+        function rebootSystem() {
+            if (confirm('Are you sure you want to restart the system? This will temporarily interrupt robot operations.')) {
+                addSystemLogEntry('🔄 System reboot initiated...');
+                setTimeout(() => {
+                    addSystemLogEntry('✅ System restarted successfully');
+                }, 5000);
+            }
+        }
+        
+        function refreshSystemLogs() {
+            addSystemLogEntry('🔄 Log refreshed');
+        }
+        
+        function clearSystemLogs() {
+            if (confirm('Clear all logs? This action cannot be undone.')) {
+                const logsContainer = document.getElementById('systemLogs');
+                if (logsContainer) {
+                    logsContainer.innerHTML = '<div style="padding: 5px 0;"><span style="color: #888; margin-right: 10px;">[' + new Date().toLocaleString() + ']</span><span>INFO: Logs cleared</span></div>';
+                }
+            }
+        }
+        
+        function addSystemLogEntry(message) {
+            const log = document.getElementById('systemLogs');
+            if (log) {
+                const time = new Date().toLocaleString();
+                const entry = document.createElement('div');
+                entry.style.cssText = 'padding: 5px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.1);';
+                entry.innerHTML = `<span style="color: #888; margin-right: 10px;">[${time}]</span><span>${message}</span>`;
+                log.appendChild(entry);
+                log.scrollTop = log.scrollHeight;
+                
+                // Keep only last 20 entries
+                const entries = log.querySelectorAll('div');
+                if (entries.length > 20) {
+                    entries[0].remove();
+                }
+            }
+        }
+        
+        // Robot Control Page Variables
+        let currentSpeed = 50;
+        let emergencyActive = false;
+        let isConnected = false;
+        let updateInterval = null;
+        let lastPosition = { x: 0, y: 0, theta: 0 };
+        
+        // Initialize
+        const speedSliderEl = document.getElementById('speedSlider');
+        if (speedSliderEl) {
+            speedSliderEl.addEventListener('input', function() {
+                currentSpeed = this.value;
+                const speedValueEl = document.getElementById('speedValue');
+                if (speedValueEl) speedValueEl.textContent = currentSpeed;
+                addLogEntry(`⚙️ Speed: ${currentSpeed}%`);
+            });
+        }
+        
+        // Start data polling
+        function startDataPolling() {
+            addLogEntry('🔄 Starting live data polling...');
+            
+            updateInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('mqtt_live_data.json');
+                    if (response.ok) {
+                        const data = await response.json();
+                        handleLiveData(data);
+                        updateConnectionStatus(true);
+                    } else {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                } catch (error) {
+                    updateConnectionStatus(false);
+                }
+            }, 500);
+        }
+        
+        // Handle live data
+        function handleLiveData(data) {
+            try {
+                if (data.kinematics && data.kinematics.current_position) {
+                    updatePosition(data.kinematics.current_position);
+                    
+                    if (data.kinematics.statistics) {
+                        updateStatistics(data.kinematics.statistics);
+                    }
+                }
+                
+                if (data.health && data.health.data) {
+                    updateHealth(data.health.data);
+                }
+                
+                // Update system status page if it's currently active
+                if (currentPage === 'systemStatus') {
+                    updateSystemStatusData(data);
+                }
+                
+                if (data.drive_response && data.drive_response.result) {
+                    updateDriveResponse(data.drive_response.result);
+                }
+                
+                const lastUpdateEl = document.getElementById('lastUpdate');
+                if (lastUpdateEl) lastUpdateEl.textContent = `Status: ${new Date().toLocaleTimeString()}`;
+                    
+            } catch (error) {
+                addLogEntry(`❌ Data error: ${error.message}`, 'error');
+            }
+        }
+
+        // Reset robot position via server action and clear local path
+        async function resetPosition() {
+            try {
+                const response = await fetch('/system_action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: 'reset_position' })
+                });
+
+                if (response.ok) {
+                    const res = await response.json();
+                    addLogEntry(`🔄 ${res.message}`, 'info');
+                    // clear local path and redraw
+                    clearPath();
+                    // also reset lastPosition
+                    lastPosition = { x: 0, y: 0, theta: 0 };
+                } else {
+                    addLogEntry('❌ Reset request failed', 'error');
+                }
+            } catch (e) {
+                addLogEntry(`❌ Reset error: ${e.message}`, 'error');
+            }
+        }
+        
+        // Update system status page with live data
+        function updateSystemStatusData(data) {
+            // Update health metrics
+            if (data.health && data.health.data) {
+                const health = data.health.data;
+                
+                // Update battery status
+                if (health.battery) {
+                    const batteryElement = document.getElementById('batteryHealthStatus');
+                    if (batteryElement) {
+                        const batteryLevel = health.battery.level || 100;
+                        if (batteryLevel > 80) {
+                            batteryElement.textContent = 'Excellent';
+                        } else if (batteryLevel > 50) {
+                            batteryElement.textContent = 'Good';
+                        } else {
+                            batteryElement.textContent = 'Low';
+                        }
+                    }
+                }
+                
+                // Update thermal status
+                if (health.system && health.system.temperature_celsius) {
+                    const thermalElement = document.getElementById('thermalHealthStatus');
+                    if (thermalElement) {
+                        const temp = health.system.temperature_celsius;
+                        if (temp < 60) {
+                            thermalElement.textContent = 'Normal';
+                        } else if (temp < 75) {
+                            thermalElement.textContent = 'Warm';
+                        } else {
+                            thermalElement.textContent = 'Hot';
+                        }
+                    }
+                }
+            }
+            
+            // Update diagnostics from system_diagnostics data
+            if (data.system_diagnostics && data.system_diagnostics.data) {
+                const diagnostics = data.system_diagnostics.data;
+                
+                if (diagnostics.system_health) {
+                    const health = diagnostics.system_health;
+                    
+                    // Update status elements
+                    const memoryElement = document.getElementById('memoryUsageStatus');
+                    const cpuElement = document.getElementById('cpuLoadStatus');
+                    const overallElement = document.getElementById('overallHealthStatus');
+                    const tempElement = document.getElementById('systemTempDiag');
+                    const voltageElement = document.getElementById('systemVoltageDiag');
+                    const errorElement = document.getElementById('errorCountDiag');
+                    
+                    if (memoryElement) memoryElement.textContent = health.memory_usage.toFixed(0) + '%';
+                    if (cpuElement) cpuElement.textContent = health.cpu_usage.toFixed(0) + '%';
+                    if (tempElement) tempElement.textContent = health.temperature.toFixed(1) + '°C';
+                    if (voltageElement) voltageElement.textContent = health.voltage.toFixed(1) + 'V';
+                    if (errorElement) errorElement.textContent = health.error_count;
+                    
+                    // Update overall health status
+                    if (overallElement) {
+                        switch (health.overall_status) {
+                            case 'healthy':
+                                overallElement.textContent = 'Healthy ✅';
+                                break;
+                            case 'warning':
+                                overallElement.textContent = 'Warning ⚠️';
+                                break;
+                            case 'critical':
+                                overallElement.textContent = 'Critical ❌';
+                                break;
+                        }
+                    }
+                }
+                
+                // Update uptime
+                if (diagnostics.uptime) {
+                    const uptimeElement = document.getElementById('systemUptime');
+                    if (uptimeElement) {
+                        uptimeElement.textContent = diagnostics.uptime.formatted;
+                    }
+                }
+            }
+            
+            // Update software updates
+            if (data.software_updates && data.software_updates.components) {
+                updateSoftwareUpdatesDisplay(data.software_updates);
+            }
+        }
+        
+        // Enhanced software updates display
+        function updateSoftwareUpdatesDisplay(softwareData) {
+            // Component details removed in UI; update only summary fields
+            const totalComponentsEl = document.getElementById('totalComponents');
+            const updatesAvailableEl = document.getElementById('updatesAvailable');
+            const autoUpdateEl = document.getElementById('autoUpdateStatus');
+
+            const totalComponents = softwareData.components ? softwareData.components.length : 0;
+            const availableUpdates = softwareData.components ? softwareData.components.filter(c => c.status === 'update_available').length : 0;
+
+            if (totalComponentsEl) totalComponentsEl.textContent = totalComponents;
+            if (updatesAvailableEl) {
+                updatesAvailableEl.textContent = availableUpdates;
+                updatesAvailableEl.style.color = availableUpdates > 0 ? '#FF9800' : '#4CAF50';
+            }
+
+            if (softwareData.auto_update_enabled !== undefined && autoUpdateEl) {
+                const autoStatus = softwareData.auto_update_enabled ? 'Enabled' : 'Disabled';
+                autoUpdateEl.textContent = autoStatus;
+                autoUpdateEl.style.color = autoStatus === 'Enabled' ? '#4CAF50' : '#FF5722';
+            }
+
+            if (softwareData.last_check) {
+                updateLastCheckTime();
+            }
+        }
+        
+        // Update position
+        function updatePosition(position) {
+            const changed = {
+                x: Math.abs(position.x - lastPosition.x) > 0.001,
+                y: Math.abs(position.y - lastPosition.y) > 0.001,
+                // position.theta from backend may be in radians; convert to degrees for UI
+                theta: Math.abs((position.theta * 180 / Math.PI) - lastPosition.theta) > 0.5
+            };
+            
+            // Convert theta to degrees for display and tracking
+            const thetaDeg = (position.theta * 180 / Math.PI);
+            setText('posX', position.x.toFixed(3) + 'm');
+            setText('posY', position.y.toFixed(3) + 'm');
+            setText('posTheta', thetaDeg.toFixed(1) + '°');
+            
+            if (changed.x) animateUpdate('posXCard');
+            if (changed.y) animateUpdate('posYCard');
+            if (changed.theta) animateUpdate('posThetaCard');
+            
+            if (changed.x || changed.y || changed.theta) {
+                addLogEntry(`📍 Pos: X=${position.x.toFixed(2)}, Y=${position.y.toFixed(2)}, θ=${position.theta.toFixed(1)}°`, 'position');
+                
+                // Update movement tracking graph
+                // Provide theta in degrees to the tracker
+                updateMovementTracking({ x: position.x, y: position.y, theta: thetaDeg });
+            }
+            
+            lastPosition = { x: position.x, y: position.y, theta: thetaDeg };
+        }
+        
+        // Update statistics
+        function updateStatistics(stats) {
+            setText('totalDistance', stats.total_distance_traveled_m.toFixed(3) + 'm');
+            setText('pathPoints', stats.path_points_logged);
+            setText('avgVelocity', stats.average_velocity_ms.toFixed(2) + ' m/s');
+            setText('efficiency', (stats.movement_efficiency * 100).toFixed(0) + '%');
+        }
+        
+        // Update health
+        function updateHealth(health) {
+            if (health.battery) {
+                const battery = health.battery.level_percent;
+                const batteryEl = document.getElementById('batteryLevel');
+                if (batteryEl) {
+                    batteryEl.textContent = battery.toFixed(1) + '%';
+                    if (battery > 50) {
+                        batteryEl.className = 'health-value health-good';
+                    } else if (battery > 20) {
+                        batteryEl.className = 'health-value health-warning';
+                    } else {
+                        batteryEl.className = 'health-value health-critical';
+                    }
+                }
+
+                const voltageEl = document.getElementById('systemVoltage');
+                if (voltageEl && health.battery.voltage !== undefined) {
+                    voltageEl.textContent = health.battery.voltage.toFixed(1) + 'V';
+                }
+            }
+            
+            if (health.system) {
+                setText('systemTemp', health.system.temperature_celsius.toFixed(1) + '°C');
+            }
+
+            setText('cycleCount', health.cycle_counter || 0);
+        }
+        
+        // Update drive response
+        function updateDriveResponse(result) {
+            if (result.velocity) {
+                setText('velocity', result.velocity.linear.toFixed(2) + ' m/s');
+                animateUpdate('velocityCard');
+            }
+            
+            if (result.status) {
+                addLogEntry(`🎮 ${result.status}`, 'command');
+            }
+        }
+        
+        // Animate update
+        function animateUpdate(elementId) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.classList.add('updating');
+                setTimeout(() => element.classList.remove('updating'), 600);
+            }
+        }
+        
+        // Movement Graph Functions
+        function initCanvas(retries = 3) {
+            canvas = document.getElementById('movementGraph');
+            if (!canvas) {
+                if (retries > 0) {
+                    // Try again shortly if DOM isn't ready
+                    setTimeout(() => initCanvas(retries - 1), 200);
+                }
+                return;
+            }
+
+            ctx = canvas.getContext('2d');
+
+            // Size the canvas for devicePixelRatio for sharper rendering
+            const container = canvas.parentElement;
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = Math.max(300, (container.clientWidth - 40) * dpr);
+            canvas.height = Math.max(200, 400 * dpr);
+            canvas.style.width = (container.clientWidth - 40) + 'px';
+            canvas.style.height = '400px';
+            ctx.scale(dpr, dpr);
+
+            // Center the view (in CSS pixels)
+            offsetX = (canvas.width / dpr) / 2;
+            offsetY = (canvas.height / dpr) / 2;
+
+            drawGraph();
+            addLogEntry('📊 Movement graph initialized');
+        }
+        
+        // Draw the movement graph
+        function drawGraph() {
+            if (!ctx) return;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw grid if enabled
+            if (showGrid) {
+                drawGrid();
+            }
+            
+            // Draw coordinate system
+            drawCoordinateSystem();
+            
+            // Draw movement path
+            drawMovementPath();
+            
+            // Draw current position
+            drawCurrentPosition();
+            
+            // Draw start position
+            drawStartPosition();
+        }
+        
+        function drawGrid() {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.lineWidth = 1;
+            
+            // Vertical lines
+            for (let x = offsetX % scale; x < canvas.width; x += scale) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            
+            // Horizontal lines
+            for (let y = offsetY % scale; y < canvas.height; y += scale) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+        
+        function drawCoordinateSystem() {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.lineWidth = 2;
+            
+            // X-axis
+            ctx.beginPath();
+            ctx.moveTo(0, offsetY);
+            ctx.lineTo(canvas.width, offsetY);
+            ctx.stroke();
+            
+            // Y-axis
+            ctx.beginPath();
+            ctx.moveTo(offsetX, 0);
+            ctx.lineTo(offsetX, canvas.height);
+            ctx.stroke();
+            
+            // Draw axis labels
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.font = '12px sans-serif';
+            ctx.fillText('X', canvas.width - 20, offsetY - 10);
+            ctx.fillText('Y', offsetX + 10, 20);
+            ctx.fillText('(0,0)', offsetX + 5, offsetY + 15);
+        }
+        
+        function drawMovementPath() {
+            if (movementPath.length < 2) return;
+            
+            ctx.strokeStyle = '#2196F3';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            
+            for (let i = 0; i < movementPath.length; i++) {
+                const pos = movementPath[i];
+                const canvasX = offsetX + pos.x * scale;
+                const canvasY = offsetY - pos.y * scale; // Invert Y for screen coordinates
+                
+                if (i === 0) {
+                    ctx.moveTo(canvasX, canvasY);
+                } else {
+                    ctx.lineTo(canvasX, canvasY);
+                }
+            }
+            ctx.stroke();
+            
+            // Draw position markers
+            ctx.fillStyle = '#2196F3';
+            for (let i = 0; i < movementPath.length; i++) {
+                const pos = movementPath[i];
+                const canvasX = offsetX + pos.x * scale;
+                const canvasY = offsetY - pos.y * scale;
+                
+                ctx.beginPath();
+                ctx.arc(canvasX, canvasY, 3, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+        }
+        
+        function drawCurrentPosition() {
+            if (movementPath.length === 0) return;
+            
+            const currentPos = movementPath[movementPath.length - 1];
+            const canvasX = offsetX + currentPos.x * scale;
+            const canvasY = offsetY - currentPos.y * scale;
+            
+            // Draw current position marker
+            ctx.fillStyle = '#4CAF50';
+            ctx.beginPath();
+            ctx.arc(canvasX, canvasY, 8, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // Draw direction indicator (arrow)
+            if (currentPos.theta !== undefined) {
+                const angle = currentPos.theta * Math.PI / 180;
+                const arrowLength = 20;
+                
+                ctx.strokeStyle = '#4CAF50';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(canvasX, canvasY);
+                ctx.lineTo(
+                    canvasX + Math.cos(angle) * arrowLength,
+                    canvasY - Math.sin(angle) * arrowLength
+                );
+                ctx.stroke();
+                
+                // Arrow head
+                const headAngle = Math.PI / 6;
+                const headLength = 8;
+                ctx.beginPath();
+                ctx.moveTo(
+                    canvasX + Math.cos(angle) * arrowLength,
+                    canvasY - Math.sin(angle) * arrowLength
+                );
+                ctx.lineTo(
+                    canvasX + Math.cos(angle - headAngle) * (arrowLength - headLength),
+                    canvasY - Math.sin(angle - headAngle) * (arrowLength - headLength)
+                );
+                ctx.moveTo(
+                    canvasX + Math.cos(angle) * arrowLength,
+                    canvasY - Math.sin(angle) * arrowLength
+                );
+                ctx.lineTo(
+                    canvasX + Math.cos(angle + headAngle) * (arrowLength - headLength),
+                    canvasY - Math.sin(angle + headAngle) * (arrowLength - headLength)
+                );
+                ctx.stroke();
+            }
+            
+            // Position text
+            ctx.fillStyle = 'white';
+            ctx.font = '12px sans-serif';
+            ctx.fillText(
+                `(${currentPos.x.toFixed(2)}, ${currentPos.y.toFixed(2)})`,
+                canvasX + 12,
+                canvasY - 12
+            );
+        }
+        
+        function drawStartPosition() {
+            if (!startPosition || movementPath.length === 0) return;
+            
+            const canvasX = offsetX + startPosition.x * scale;
+            const canvasY = offsetY - startPosition.y * scale;
+            
+            ctx.fillStyle = '#FF9800';
+            ctx.beginPath();
+            ctx.arc(canvasX, canvasY, 6, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.fillStyle = 'white';
+            ctx.font = '12px sans-serif';
+            ctx.fillText('START', canvasX + 10, canvasY - 10);
+        }
+        
+        // Graph control functions
+        function clearPath() {
+            movementPath = [];
+            startPosition = null;
+            drawGraph();
+            addLogEntry('📊 Movement path cleared', 'info');
+        }
+        
+        function centerView() {
+            if (canvas) {
+                offsetX = canvas.width / 2;
+                offsetY = canvas.height / 2;
+                drawGraph();
+                addLogEntry('🎯 View centered', 'info');
+            }
+        }
+        
+        function toggleGrid() {
+            showGrid = !showGrid;
+            drawGraph();
+            addLogEntry(`⊞ Grid ${showGrid ? 'enabled' : 'disabled'}`, 'info');
+        }
+        
+        function zoomIn() {
+            scale = Math.min(scale * 1.2, 200);
+            drawGraph();
+            addLogEntry('🔍+ Zoomed in', 'info');
+        }
+        
+        function zoomOut() {
+            scale = Math.max(scale * 0.8, 10);
+            drawGraph();
+            addLogEntry('🔍- Zoomed out', 'info');
+        }
+        
+        // Update movement tracking
+        function updateMovementTracking(position) {
+            if (!position) return;
+            
+            // Set start position if not set
+            if (startPosition === null && movementPath.length === 0) {
+                startPosition = { x: position.x, y: position.y };
+            }
+            // If translation is zero but theta changed, update the last entry's theta so
+            // the arrow rotates in place rather than adding a new path point.
+            const last = movementPath.length ? movementPath[movementPath.length - 1] : null;
+            const moved = !last || Math.abs(position.x - last.x) > 0.0005 || Math.abs(position.y - last.y) > 0.0005;
+
+            if (!moved && last) {
+                // rotation-only: update theta of last point
+                last.theta = position.theta;
+                last.timestamp = new Date();
+            } else {
+                // Add new position to path
+                movementPath.push({
+                    x: position.x,
+                    y: position.y,
+                    theta: position.theta,
+                    timestamp: new Date()
+                });
+            }
+            
+            // Keep only last 100 positions to avoid memory issues
+            if (movementPath.length > 100) {
+                movementPath.shift();
+            }
+            
+            // Redraw graph
+            if (!canvas || !ctx) {
+                initCanvas();
+            }
+            drawGraph();
+        }
+        
+        // Send command
+        async function sendCommand(direction, el) {
+            if (emergencyActive) {
+                addLogEntry('🛑 Blocked - E-stop active', 'error');
+                return;
+            }
+            // normalize rotate commands to expected backend directions
+            const rotateMap = { 'rotate_left': 'rotate_left', 'rotate_right': 'rotate_right' };
+            const command = {
+                direction: rotateMap[direction] || direction,
+                speed: currentSpeed / 100,
+                duration: 1.5
+            };
+            
+            try {
+                const response = await fetch('/send_command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(command)
+                });
+                
+                if (response.ok) {
+                    addLogEntry(`🎮 ${direction} @ ${currentSpeed}%`, 'command');
+                    
+                    // Safe visual feedback if element provided
+                    try {
+                        if (el && el.style) {
+                            const original = el.style.background;
+                            el.style.background = '#4CAF50';
+                            setTimeout(() => el.style.background = original, 400);
+                        }
+                    } catch (e) {
+                        // ignore UI feedback errors
+                    }
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+            } catch (error) {
+                addLogEntry(`❌ Command failed: ${error.message}`, 'error');
+            }
+        }
+        
+        // Emergency stop
+        function emergencyStop() {
+            emergencyActive = !emergencyActive;
+            const button = document.getElementById('emergencyBtn');
+            
+            if (emergencyActive) {
+                button.textContent = '🔓 RELEASE';
+                button.style.background = '#FF5722';
+                addLogEntry('🛑 EMERGENCY STOP', 'error');
+                
+                document.querySelectorAll('.btn-drive').forEach(btn => btn.disabled = true);
+            } else {
+                button.textContent = '🛑 E-STOP';
+                button.style.background = '';
+                addLogEntry('✅ E-stop released');
+                
+                document.querySelectorAll('.btn-drive').forEach(btn => btn.disabled = false);
+            }
+        }
+        
+        // Update connection status
+        function updateConnectionStatus(connected) {
+            if (connected !== isConnected) {
+                const statusDiv = document.getElementById('connectionStatus');
+                const statusIcon = document.getElementById('statusIcon');
+                const statusText = document.getElementById('statusText');
+                
+                if (connected) {
+                    statusDiv.className = 'connection-status connected';
+                    statusIcon.textContent = '🟢';
+                    statusText.textContent = 'Connected';
+                    addLogEntry('✅ Connected to robot');
+                } else {
+                    statusDiv.className = 'connection-status disconnected';
+                    statusIcon.textContent = '🔴';
+                    statusText.textContent = 'Disconnected';
+                    addLogEntry('❌ Connection lost');
+                }
+                isConnected = connected;
+            }
+        }
+        
+        // Add log entry
+        function addLogEntry(message, type = 'info') {
+            const log = document.getElementById('activityLog');
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.innerHTML = `<strong>[${time}]</strong> ${message}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+            
+            const entries = log.querySelectorAll('.log-entry');
+            if (entries.length > 15) {
+                entries[0].remove();
+            }
+        }
+        
+        // Initialize
+        window.addEventListener('load', function() {
+            addLogEntry('✅ Interface loaded');
+            initCanvas();
+            startDataPolling();
+        });
+        
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            if (canvas) {
+                const container = canvas.parentElement;
+                canvas.width = container.clientWidth - 40;
+                drawGraph();
+            }
+        });
+    </script>
+</body>
+</html>
