@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
@@ -102,8 +104,60 @@ async def handle_robot_status(topic: str, payload: Any) -> None:
             await telemetry_processor.process_telemetry(robot_id, payload, db)
             break
 
-        # Broadcast to WebSocket clients
+        # Broadcast to WebSocket clients (standard format)
         await ws_manager.broadcast_telemetry(robot_id, payload)
+
+        # Also broadcast as health_telemetry for Operations Dashboard
+        health_telemetry = {
+            "type": "health_telemetry",
+            "robot_id": robot_id,
+            "battery": {
+                "level": payload.get("battery", 0),
+                "health": payload.get("health", 100)
+            },
+            "thermal": {
+                "cpu_temp": payload.get("temperature", 0),
+                "motor_temp": payload.get("temperature", 0)
+            },
+            "resources": {
+                "cpu_usage": 30,  # Can be enhanced later
+                "memory_usage": 45,
+                "disk_usage": 32
+            },
+            "performance": {
+                "fps": 30,
+                "signal_strength": 5,
+                "latency_ms": 45
+            },
+            "health_score": payload.get("health", 100),
+            "health_status": "HEALTHY" if payload.get("health", 100) > 70 else "WARNING" if payload.get("health", 100) > 40 else "CRITICAL"
+        }
+        await ws_manager.broadcast(health_telemetry)
+
+        # Broadcast control_state for position updates
+        control_state = {
+            "type": "control_state",
+            "robot_id": robot_id,
+            "mode": payload.get("mode", "STANDBY").upper(),
+            "position": {
+                "x": payload.get("pose", {}).get("x", 0),
+                "y": payload.get("pose", {}).get("y", 0),
+                "heading": payload.get("pose", {}).get("theta", 0) * 57.2958  # radians to degrees
+            }
+        }
+        await ws_manager.broadcast(control_state)
+
+        # Broadcast pose_update for map visualization with GPS coordinates
+        gps_data = payload.get("gps", {})
+        if gps_data.get("latitude") and gps_data.get("longitude"):
+            pose_update = {
+                "type": "pose_update",
+                "robot_id": robot_id,
+                "lat": gps_data.get("latitude", 0),
+                "lon": gps_data.get("longitude", 0),
+                "heading": payload.get("pose", {}).get("theta", 0) * 57.2958  # radians to degrees
+            }
+            await ws_manager.broadcast(pose_update)
 
     except Exception as e:
         logger.error(f"Error handling robot status: {e}")
@@ -172,11 +226,53 @@ async def handle_robot_gps(topic: str, payload: Any) -> None:
         parts = topic.split("/")
         robot_id = parts[-1] if len(parts) > 2 else payload.get("robot_id", "unknown")
 
-        # Broadcast to WebSocket clients
+        # Broadcast to WebSocket clients (standard format)
         await ws_manager.broadcast_gps(robot_id, payload)
+
+        # Also send pose_update for map visualization
+        pose_update = {
+            "type": "pose_update",
+            "robot_id": robot_id,
+            "lat": payload.get("latitude", 0),
+            "lon": payload.get("longitude", 0),
+            "heading": 0  # Will be updated from pose data
+        }
+        await ws_manager.broadcast(pose_update)
 
     except Exception as e:
         logger.error(f"Error handling robot GPS: {e}")
+
+
+async def handle_robot_battery(topic: str, payload: Any) -> None:
+    """Handle robot battery messages."""
+    try:
+        if not isinstance(payload, dict):
+            return
+
+        parts = topic.split("/")
+        robot_id = parts[-1] if len(parts) > 2 else payload.get("robot_id", "unknown")
+
+        # Broadcast to WebSocket clients
+        await ws_manager.broadcast({"type": "battery", "robot_id": robot_id, "data": payload})
+
+    except Exception as e:
+        logger.error(f"Error handling robot battery: {e}")
+
+
+async def handle_robot_health(topic: str, payload: Any) -> None:
+    """Handle robot health messages."""
+    try:
+        if not isinstance(payload, dict):
+            return
+
+        parts = topic.split("/")
+        robot_id = parts[-1] if len(parts) > 2 else payload.get("robot_id", "unknown")
+
+        # Broadcast to WebSocket clients
+        await ws_manager.broadcast({"type": "health", "robot_id": robot_id, "data": payload})
+
+    except Exception as e:
+        logger.error(f"Error handling robot health: {e}")
 
 
 def _cancel_dummy_task() -> None:
@@ -228,6 +324,8 @@ async def on_startup() -> None:
     mqtt_manager.register_handler("robot/errors/*", handle_robot_errors)
     mqtt_manager.register_handler("robot/joints/*", handle_robot_joints)
     mqtt_manager.register_handler("robot/gps/*", handle_robot_gps)
+    mqtt_manager.register_handler("robot/battery/*", handle_robot_battery)
+    mqtt_manager.register_handler("robot/health/*", handle_robot_health)
 
     # Start MQTT connection
     mqtt_manager.start()
@@ -239,6 +337,15 @@ async def on_startup() -> None:
 
     # Start robot simulators if enabled
     if settings.enable_robot_simulator:
+        print("\n" + "=" * 70)
+        print("ROBOT SIMULATOR")
+        print("=" * 70)
+        print(f"Number of robots: {settings.num_simulated_robots}")
+        print(f"MQTT Broker: {settings.mqtt_host}:{settings.mqtt_port}")
+        print(f"Spawn location: {settings.simulator_center_lat}, {settings.simulator_center_lon}")
+        print(f"Spawn radius: {settings.simulator_spawn_radius} km")
+        print("=" * 70 + "\n")
+
         logger.info(f"Starting {settings.num_simulated_robots} robot simulator(s)...")
 
         for i in range(settings.num_simulated_robots):
@@ -262,6 +369,7 @@ async def on_startup() -> None:
             ]
             robot.mode = random.choice(modes)
             robot.battery = random.uniform(30.0, 100.0)
+            robot.health = random.uniform(80.0, 100.0)  # Random initial health
             robot.theta = random.uniform(0, 2 * math.pi)
 
             robot.start()
@@ -269,8 +377,27 @@ async def on_startup() -> None:
 
             logger.info(
                 f"Started robot '{robot_id}' at GPS ({lat:.6f}, {lon:.6f}), "
-                f"mode={robot.mode}, battery={robot.battery:.1f}%"
+                f"mode={robot.mode}, battery={robot.battery:.1f}%, health={robot.health:.1f}%"
             )
+
+        print("\n" + "=" * 70)
+        print(f"[✓] All {settings.num_simulated_robots} robot(s) started successfully!")
+        print("=" * 70)
+        print("\nRobots are now publishing telemetry to MQTT topics:")
+        print("  - robot/status/<robot_id>   - Full telemetry")
+        print("  - robot/battery/<robot_id>  - Battery info")
+        print("  - robot/health/<robot_id>   - Health metrics")
+        print("  - robot/pose/<robot_id>     - Position & GPS")
+        print("  - robot/joints/<robot_id>   - Joint states")
+        print("  - robot/gps/<robot_id>      - GPS coordinates")
+        print("\nWebSocket endpoint available at: ws://localhost:8001/ws")
+        print("API documentation at: http://localhost:8001/docs")
+        print("\nTo control robots via REST API:")
+        print("  POST /robot/mode - Switch mode (sitting, standing, walking, running)")
+        print("  POST /robot/cmd_vel - Send velocity commands")
+        print("  POST /robot/teleop - Send teleop commands")
+        print("\nPress Ctrl+C to stop the server")
+        print("=" * 70 + "\n")
 
         logger.info(f"[✓] All {settings.num_simulated_robots} robot simulator(s) started successfully!")
         logger.info("Robots are now publishing telemetry to MQTT topics")

@@ -45,6 +45,8 @@ class MQTTListener:
              "robot/errors/#",
             "robot/joints/#",
             "robot/gps/#",
+            "robot/battery/#",
+            "robot/health/#",
              "simulator/#",
             "frontend/events/#"
         ]
@@ -111,6 +113,12 @@ class MQTTListener:
         if "status" in topic:
             color_prefix = "\033[92m"  # Green
             msg_type = "STATUS"
+        elif "battery" in topic:
+            color_prefix = "\033[93m"  # Yellow
+            msg_type = "BATTERY"
+        elif "health" in topic:
+            color_prefix = "\033[96m"  # Cyan
+            msg_type = "HEALTH"
         elif "joints" in topic:
             color_prefix = "\033[95m"  # Magenta
             msg_type = "JOINTS"
@@ -152,7 +160,38 @@ class MQTTListener:
                 if "status" in payload:
                     print(f"Status: {payload['status']}")
                 if "battery" in payload:
-                    print(f"Battery: {payload['battery']}%")
+                    battery = payload['battery']
+                    battery_str = f"Battery: {battery}%"
+                    # Add charging indicator if present
+                    if "charging" in payload and payload['charging']:
+                        battery_str += " (CHARGING)"
+                    print(battery_str)
+
+                # Health information display
+                if "health" in payload:
+                    health = payload['health']
+                    health_str = f"Health: {health}%"
+                    # Add color indicator for health status
+                    if health >= 80:
+                        health_str += " [GOOD]"
+                    elif health >= 50:
+                        health_str += " [FAIR]"
+                    else:
+                        health_str += " [POOR]"
+                    print(health_str)
+
+                # Temperature display
+                if "temperature" in payload:
+                    temp = payload['temperature']
+                    temp_str = f"Temperature: {temp}°C"
+                    # Add warning indicator for high temperature
+                    if temp >= 55:
+                        temp_str += " [HIGH]"
+                    elif temp >= 45:
+                        temp_str += " [WARM]"
+                    else:
+                        temp_str += " [NORMAL]"
+                    print(temp_str)
 
                 # GPS coordinates display
                 if "latitude" in payload and "longitude" in payload:

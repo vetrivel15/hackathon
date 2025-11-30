@@ -95,6 +95,8 @@ class RobotSimulator:
         self.mode = self.MODE_STANDING
         self.status = self.STATUS_IDLE
         self.battery = random.uniform(50.0, 100.0)
+        self.health = 100.0  # Overall health percentage (0-100)
+        self.temperature = random.uniform(25.0, 35.0)  # CPU/motor temperature in Celsius
 
         # Position tracking
         self.x = 0.0  # meters
@@ -203,6 +205,43 @@ class RobotSimulator:
                     self.status = self.STATUS_CHARGING
                     self.battery = min(100.0, self.battery + 0.5 * dt)
 
+            # Update temperature based on activity
+            if self.mode == self.MODE_RUNNING:
+                self.temperature = min(65.0, self.temperature + 0.2 * dt)
+            elif self.mode == self.MODE_WALKING:
+                self.temperature = min(50.0, self.temperature + 0.1 * dt)
+            elif self.mode == self.MODE_SITTING:
+                self.temperature = max(25.0, self.temperature - 0.3 * dt)
+            else:  # STANDING
+                self.temperature = max(30.0, self.temperature - 0.1 * dt)
+
+            # Calculate health based on multiple factors
+            health_factors = []
+            # Battery health contribution (30%)
+            battery_health = (self.battery / 100.0) * 30.0
+            health_factors.append(battery_health)
+
+            # Temperature health contribution (40%)
+            if self.temperature < 45.0:
+                temp_health = 40.0
+            elif self.temperature < 55.0:
+                temp_health = 40.0 - ((self.temperature - 45.0) / 10.0) * 20.0
+            else:
+                temp_health = 20.0 - ((min(self.temperature, 70.0) - 55.0) / 15.0) * 20.0
+            health_factors.append(max(0.0, temp_health))
+
+            # General wear and tear (30%) - slowly degrades, can recover when sitting
+            if self.mode == self.MODE_SITTING:
+                self.health = min(100.0, self.health + 0.02 * dt)
+            elif self.mode == self.MODE_RUNNING:
+                self.health = max(30.0, self.health - 0.05 * dt)
+            elif self.mode == self.MODE_WALKING:
+                self.health = max(50.0, self.health - 0.02 * dt)
+
+            # Random health degradation from errors
+            if random.random() < 0.001:  # 0.1% chance per update
+                self.health = max(0.0, self.health - random.uniform(1.0, 5.0))
+
     def _publish_telemetry(self) -> None:
         """Publish robot telemetry to MQTT."""
         with self._lock:
@@ -212,6 +251,8 @@ class RobotSimulator:
                 "mode": self.mode,
                 "status": self.status,
                 "battery": round(self.battery, 2),
+                "health": round(self.health, 2),
+                "temperature": round(self.temperature, 2),
                 "pose": {
                     "x": round(self.x, 3),
                     "y": round(self.y, 3),
@@ -227,6 +268,23 @@ class RobotSimulator:
 
         # Publish to multiple topics
         mqtt_manager.publish_event(f"robot/status/{self.robot_id}", telemetry)
+
+        # Publish battery and health information separately
+        mqtt_manager.publish_event(f"robot/battery/{self.robot_id}", {
+            "robot_id": self.robot_id,
+            "battery": round(self.battery, 2),
+            "charging": self.status == self.STATUS_CHARGING,
+            "timestamp": timestamp
+        })
+
+        mqtt_manager.publish_event(f"robot/health/{self.robot_id}", {
+            "robot_id": self.robot_id,
+            "health": round(self.health, 2),
+            "temperature": round(self.temperature, 2),
+            "battery": round(self.battery, 2),
+            "status": self.status,
+            "timestamp": timestamp
+        })
         mqtt_manager.publish_event(f"robot/pose/{self.robot_id}", {
             "pose": telemetry["pose"],
             "gps": telemetry["gps"],
@@ -423,6 +481,8 @@ class RobotSimulator:
                 "mode": self.mode,
                 "status": self.status,
                 "battery": round(self.battery, 2),
+                "health": round(self.health, 2),
+                "temperature": round(self.temperature, 2),
                 "pose": {
                     "x": round(self.x, 3),
                     "y": round(self.y, 3),
@@ -547,6 +607,8 @@ class RobotSimulator:
         print(f"  Mode:        {self.mode}")
         print(f"  Status:      {self.status}")
         print(f"  Battery:     {round(self.battery, 2)}%")
+        print(f"  Health:      {round(self.health, 2)}%")
+        print(f"  Temperature: {round(self.temperature, 2)}°C")
 
         # Pose endpoint data
         print(f"\n[/robot/{{robot_id}}/path] - Robot Pose:")

@@ -52,8 +52,7 @@ function MapInteraction({ robotPosition, onMapClick, isAddingWaypoint }) {
 export default function TeleopPanel() {
   const joystickContainer = useRef(null);
   const joystickInstance = useRef(null);
-  const [posture, setPosture] = useState('Stand');
-  const [mode, setMode] = useState('Walk');
+  const [mode, setMode] = useState('Stand');
   const [isEmergencyStop, setIsEmergencyStop] = useState(false);
   const [joystickActive, setJoystickActive] = useState(false);
   const [velocityDisplay, setVelocityDisplay] = useState({ linear: 0, angular: 0 });
@@ -180,31 +179,17 @@ export default function TeleopPanel() {
     }
   };
 
-  const handlePostureChange = (e) => {
-    const newPosture = e.target.value;
-    setPosture(newPosture);
-
-    // Send MQTT mode command - backend expects: sit, stand (via mode topic, not teleop)
-    const postureMap = {
-      'Stand': 'stand',
-      'Sit': 'sit',
-      'Kneel': 'kneel',
-      'Wave': 'wave'
-    };
-    const postureCommand = postureMap[newPosture] || newPosture.toLowerCase();
-    console.log('🚀 Sending posture change:', postureCommand);
-    const success = websocketService.sendMode('robot_01', postureCommand);
-    console.log('📡 Posture command sent:', success ? 'SUCCESS' : 'FAILED');
-  };
-
   const handleModeChange = (e) => {
     const newMode = e.target.value;
     setMode(newMode);
 
-    // Send MQTT mode command - backend expects: walk, run (not walking, running)
+    // Send MQTT mode command - backend expects: sitting, standing, walking, running
     const modeMap = {
-      'Walk': 'walk',
-      'Run': 'run'
+      'Sit': 'sitting',
+      'Stand': 'standing',
+      'Walk': 'walking',
+      'Run': 'running',
+      'Stop': 'standing'  // Stop means go to standing position
     };
     const modeCommand = modeMap[newMode] || newMode.toLowerCase();
     console.log('🚀 Sending mode change:', modeCommand);
@@ -532,24 +517,11 @@ export default function TeleopPanel() {
             disabled={isEmergencyStop}
             className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 disabled:bg-slate-700 disabled:cursor-not-allowed transition-all"
           >
+            <option value="Sit">🪑 Sit</option>
+            <option value="Stand">🧍 Stand</option>
             <option value="Walk">🚶 Walk</option>
             <option value="Run">🏃 Run</option>
-          </select>
-        </div>
-
-        {/* Posture Selection */}
-        <div className="flex-shrink-0">
-          <label className="text-sm text-slate-300 block mb-2 font-semibold">🧍 Posture</label>
-          <select
-            value={posture}
-            onChange={handlePostureChange}
-            disabled={isEmergencyStop}
-            className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 disabled:bg-slate-700 disabled:cursor-not-allowed transition-all"
-          >
-            <option value="Stand">Stand</option>
-            <option value="Sit">Sit</option>
-            <option value="Kneel">Kneel</option>
-            <option value="Wave">Wave</option>
+            <option value="Stop">🛑 Stop</option>
           </select>
         </div>
 
