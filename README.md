@@ -1,4 +1,4 @@
-# Live MQTT Robot Control (local demo)
+# Robot Control System 
 
 A lightweight local demo that simulates a robot, serves a single-page control and monitoring UI (`interface.html`), and exposes simple HTTP endpoints for commands and system actions. The backend is implemented in Python and writes live state to `mqtt_live_data.json`; the frontend polls that file (or `/get_live_data`) to render telemetry and a movement tracker.
 
